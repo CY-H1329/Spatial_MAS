@@ -47,6 +47,13 @@ python infer_mindcube_qwen3vl.py --adapter_dir ./out/qwen3vl --bf16
 - Entraînement : `timing_train.json` dans chaque `--output_dir`.
 - Inférence : `timing_infer.jsonl` + `timing_infer_summary.json` dans chaque `--output_dir` d’inférence.
 
+Détail de la **procédure** et des clés JSON : voir **`PROCEDURE_LOGS.md`**.
+
+### Avertissements conda courants
+
+- **torchvision** `undefined symbol` / `image.so` : souvent inoffensif ici (images via PIL, pas `torchvision.io`). Aligner `torch` / `torchvision` si besoin.
+- **`trust_remote_code` sur le dataset** : corrigé dans `dsrbench_io.py` ; mettre à jour le dossier (`git pull`) si tu vois encore ce message.
+
 ## Scripts shell
 
 - `run_h100.sh` — exemple minimal (Qwen3 + infer).

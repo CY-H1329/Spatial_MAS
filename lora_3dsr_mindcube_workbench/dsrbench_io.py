@@ -39,7 +39,8 @@ def load_3dsrbench_rows(
 ) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
     """Retourne des dicts normalisés: image (PIL), question, options (str), answer (A-D), category."""
     t0 = time.perf_counter()
-    ds = load_dataset("ccvl/3DSRBench", name="benchmark", split="test", trust_remote_code=True)
+    # `trust_remote_code` n'est plus pris en charge pour ce dataset (datasets récents) — ne pas le passer.
+    ds = load_dataset("ccvl/3DSRBench", name="benchmark", split="test")
     rows = list(ds)
     timing: Dict[str, float] = {"hf_load_dataset_s": time.perf_counter() - t0}
     if max_samples is not None and max_samples < len(rows):
