@@ -56,15 +56,19 @@ def main() -> None:
     root = ensure_mindcube_extracted()
     rows = load_mindcube_rows(split=split, max_samples=args.max_samples, seed=42)
 
+    if not torch.cuda.is_available():
+        raise SystemExit("CUDA requis pour infer_mindcube_qwen3vl.py")
+    device = torch.device("cuda")
     dtype = torch.bfloat16 if args.bf16 else torch.float32
     t0 = time.perf_counter()
     processor = AutoProcessor.from_pretrained(args.base_model_id, trust_remote_code=True)
+    # Pas de device_map="auto" : évite la dépendance obligatoire à `accelerate` sur certains envs.
     base = Qwen3VLForConditionalGeneration.from_pretrained(
         args.base_model_id,
         dtype=dtype,
-        device_map="auto",
         trust_remote_code=True,
     )
+    base = base.to(device)
     model = PeftModel.from_pretrained(base, args.adapter_dir)
     model.eval()
     dev = next(model.parameters()).device
