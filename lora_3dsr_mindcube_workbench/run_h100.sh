@@ -22,7 +22,7 @@ python train_lora_qwen3vl.py \
   --bf16 \
   --image_cache "./data/3dsr_image_cache"
 
-python infer_mindcube.py \
+python infer_mindcube_qwen3vl.py \
   --base_model_id "Qwen/Qwen3-VL-4B-Instruct" \
   --adapter_dir "$ADAPTER" \
   --mindcube_split tinybench \
