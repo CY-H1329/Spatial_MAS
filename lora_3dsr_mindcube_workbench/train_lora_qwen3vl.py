@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
+from mc_common import collate_list_of_dicts
 
 
 def _import_qwen():
@@ -147,7 +148,7 @@ def main() -> None:
     device = torch.device("cuda")
     model = Qwen3VLForConditionalGeneration.from_pretrained(
         args.model_id,
-        torch_dtype=dtype,
+        dtype=dtype,
         trust_remote_code=True,
     )
     model = model.to(device)
@@ -169,7 +170,7 @@ def main() -> None:
 
     opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr)
     ds = BenchDataset(rows)
-    dl = DataLoader(ds, batch_size=1, shuffle=True, num_workers=0)
+    dl = DataLoader(ds, batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_list_of_dicts)
 
     model.train()
     epoch_times: List[float] = []

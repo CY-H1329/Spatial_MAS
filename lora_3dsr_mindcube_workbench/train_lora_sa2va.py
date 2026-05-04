@@ -26,6 +26,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
+from mc_common import collate_list_of_dicts
 from spatial_mas_src2 import insert_src2
 
 
@@ -134,7 +135,7 @@ def main() -> None:
     timing["steps"].append({"name": "inject_lora", "s": time.perf_counter() - t0})
 
     opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr)
-    dl = DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, num_workers=0)
+    dl = DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_list_of_dicts)
 
     trained = 0
     for ep in range(args.epochs):

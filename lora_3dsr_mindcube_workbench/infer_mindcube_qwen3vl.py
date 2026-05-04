@@ -61,7 +61,7 @@ def main() -> None:
     processor = AutoProcessor.from_pretrained(args.base_model_id, trust_remote_code=True)
     base = Qwen3VLForConditionalGeneration.from_pretrained(
         args.base_model_id,
-        torch_dtype=dtype,
+        dtype=dtype,
         device_map="auto",
         trust_remote_code=True,
     )

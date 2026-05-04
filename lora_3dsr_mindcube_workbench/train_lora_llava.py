@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
+from mc_common import collate_list_of_dicts
 
 
 def _import_llava():
@@ -133,7 +134,7 @@ def main() -> None:
 
     t0 = time.perf_counter()
     processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
-    model = LlavaNext.from_pretrained(args.model_id, torch_dtype=dtype, trust_remote_code=True)
+    model = LlavaNext.from_pretrained(args.model_id, dtype=dtype, trust_remote_code=True)
     model = model.to(device)
     timing["steps"].append({"name": "load_model_processor", "s": time.perf_counter() - t0})
 
@@ -153,7 +154,7 @@ def main() -> None:
     timing["steps"].append({"name": "inject_lora", "s": time.perf_counter() - t0})
 
     opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr)
-    dl = DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, num_workers=0)
+    dl = DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_list_of_dicts)
     model.train()
     epoch_times: List[float] = []
     for ep in range(args.epochs):

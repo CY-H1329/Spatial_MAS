@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from PIL import Image
+
+
+def collate_list_of_dicts(batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Pour `DataLoader` : ne pas fusionner les dicts (champs PIL, str, etc.)."""
+    return batch
 
 
 def parse_letter(text: str) -> Optional[str]:

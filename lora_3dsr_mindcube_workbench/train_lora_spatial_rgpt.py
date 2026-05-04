@@ -24,6 +24,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
+from mc_common import collate_list_of_dicts
 from spatial_mas_src2 import insert_src2
 
 
@@ -149,7 +150,10 @@ def main() -> None:
     forward_ok = False
 
     for ep in range(args.epochs):
-        for batch in tqdm(DataLoader(BenchDataset(rows), batch_size=1, shuffle=True), desc=f"srgpt ep{ep+1}"):
+        for batch in tqdm(
+            DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, collate_fn=collate_list_of_dicts),
+            desc=f"srgpt ep{ep+1}",
+        ):
             ex = batch[0]
             ut = build_user_text(ex["question"], ex["options_block"])
             b = build_batch_spatial_rgpt(runner, ex["image"], ut, ex["answer"], device)

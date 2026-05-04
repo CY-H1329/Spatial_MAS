@@ -53,7 +53,7 @@ def main() -> None:
     t0 = time.perf_counter()
     processor = AutoProcessor.from_pretrained(args.processor_id, trust_remote_code=True)
     base = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-        args.base_model_id, torch_dtype=dtype, trust_remote_code=True
+        args.base_model_id, dtype=dtype, trust_remote_code=True
     )
     base = base.to("cuda")
     model = PeftModel.from_pretrained(base, args.adapter_dir)
