@@ -1,0 +1,11 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+outputs/
+data/3dsr_image_cache/
+data/mindcube/
+*.pt
+*.bin
+.huggingface/

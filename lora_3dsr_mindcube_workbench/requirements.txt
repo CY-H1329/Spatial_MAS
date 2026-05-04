@@ -1,0 +1,12 @@
+# Qwen3-VL nécessite souvent une version récente de transformers (voir README).
+torch>=2.4.0
+accelerate>=0.34.0
+peft>=0.14.0
+datasets>=3.0.0
+pillow>=10.0.0
+requests>=2.31.0
+huggingface_hub>=0.26.0
+tqdm>=4.66.0
+safetensors>=0.4.0
+# Optionnel : décommenter si besoin de transformers en dev
+# git+https://github.com/huggingface/transformers
