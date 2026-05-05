@@ -37,7 +37,12 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--base_model_id", type=str, default="ccvl/SpatialReasoner")
     p.add_argument("--processor_id", type=str, default="Qwen/Qwen2.5-VL-7B-Instruct")
-    p.add_argument("--adapter_dir", type=str, required=True)
+    p.add_argument(
+        "--adapter_dir",
+        type=str,
+        default="",
+        help="Dossier PEFT (adapter_config.json). Vide = modèle de base seul.",
+    )
     p.add_argument("--mindcube_split", type=str, default="tinybench", choices=["test", "train", "tinybench"])
     p.add_argument("--max_samples", type=int, default=50)
     p.add_argument("--full_dataset", action="store_true", help="Tout le split MindCube.")
@@ -72,7 +77,20 @@ def main() -> None:
         args.base_model_id, dtype=dtype, trust_remote_code=True
     )
     base = base.to("cuda")
-    model = PeftModel.from_pretrained(base, args.adapter_dir)
+    adapter_dir = (args.adapter_dir or "").strip()
+    if adapter_dir:
+        cfg = Path(adapter_dir).expanduser().resolve() / "adapter_config.json"
+        if not cfg.is_file():
+            raise SystemExit(
+                f"Adaptateur LoRA introuvable : {cfg} absent. "
+                "Exécute train_lora_spatial_reasoner.py avec le même --output_dir, "
+                "ou passe --adapter_dir \"\" pour l’inférence sans LoRA (base seule)."
+            )
+        log_infer(TAG, f"Chargement PEFT depuis {adapter_dir}…")
+        model = PeftModel.from_pretrained(base, adapter_dir)
+    else:
+        log_infer(TAG, "Pas d’adaptateur — inférence sur le modèle de base seul.")
+        model = base
     model.eval()
     dev = next(model.parameters()).device
     load_model_s = time.perf_counter() - t0
