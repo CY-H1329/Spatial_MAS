@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Optional
 from PIL import Image
 
 
+def log_infer(tag: str, message: str) -> None:
+    """Affiche une étape sur stderr-safe stdout (flush) pour les longs chargements HF."""
+    print(f"[{tag}] {message}", flush=True)
+
+
 def collate_list_of_dicts(batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Pour `DataLoader` : ne pas fusionner les dicts (champs PIL, str, etc.)."""
     return batch

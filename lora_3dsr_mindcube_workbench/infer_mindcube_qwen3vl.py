@@ -13,6 +13,7 @@ import torch
 from peft import PeftModel
 from tqdm import tqdm
 
+from mc_common import log_infer
 from mindcube_io import Split, ensure_mindcube_extracted, load_mindcube_images, load_mindcube_rows, mindcube_root
 
 
@@ -50,7 +51,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    TAG = "infer_qwen3vl"
     args = parse_args()
+    log_infer(TAG, "Démarrage (les warnings torchvision au-dessus sont souvent sans effet ici).")
     AutoProcessor, Qwen3VLForConditionalGeneration = _import_qwen()
     split: Split = args.mindcube_split  # type: ignore[assignment]
 
@@ -58,27 +61,35 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = out_dir / "timing_infer.jsonl"
 
+    log_infer(TAG, "Vérification / téléchargement MindCube (data.zip)…")
     root = ensure_mindcube_extracted()
     cap_rows = None if args.full_dataset else args.max_samples
+    log_infer(TAG, f"Lecture JSONL MindCube (split={split}, full_dataset={args.full_dataset})…")
     rows = load_mindcube_rows(split=split, max_samples=cap_rows, seed=42)
+    log_infer(TAG, f"{len(rows)} exemples à évaluer.")
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA requis pour infer_mindcube_qwen3vl.py")
     device = torch.device("cuda")
     dtype = torch.bfloat16 if args.bf16 else torch.float32
     t0 = time.perf_counter()
+    log_infer(TAG, "Chargement AutoProcessor HF (quelques secondes à minutes)…")
     processor = AutoProcessor.from_pretrained(args.base_model_id, trust_remote_code=True)
+    log_infer(TAG, "Chargement des poids Qwen3-VL (plusieurs minutes possibles, pas de barre — normal)…")
     # Pas de device_map="auto" : évite la dépendance obligatoire à `accelerate` sur certains envs.
     base = Qwen3VLForConditionalGeneration.from_pretrained(
         args.base_model_id,
         dtype=dtype,
         trust_remote_code=True,
     )
+    log_infer(TAG, "Transfert du modèle sur GPU…")
     base = base.to(device)
+    log_infer(TAG, f"Chargement adaptateurs LoRA depuis {args.adapter_dir}…")
     model = PeftModel.from_pretrained(base, args.adapter_dir)
     model.eval()
     dev = next(model.parameters()).device
     load_model_s = time.perf_counter() - t0
+    log_infer(TAG, f"Modèle prêt en {load_model_s:.1f}s — début génération (barre tqdm ci-dessous).")
 
     correct = 0
     total = 0
