@@ -8,7 +8,12 @@ from PIL import Image
 
 
 def log_infer(tag: str, message: str) -> None:
-    """Affiche une étape sur stderr-safe stdout (flush) pour les longs chargements HF."""
+    """Affiche une étape (stdout, flush) pendant les longs chargements HF."""
+    print(f"[{tag}] {message}", flush=True)
+
+
+def log_train(tag: str, message: str) -> None:
+    """Affiche une étape pendant l’entraînement LoRA."""
     print(f"[{tag}] {message}", flush=True)
 
 

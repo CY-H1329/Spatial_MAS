@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
-from mc_common import collate_list_of_dicts
+from mc_common import collate_list_of_dicts, log_train
 
 
 def _import_qwen():
@@ -127,11 +127,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--image_cache", type=str, default="./data/3dsr_image_cache")
     p.add_argument("--bf16", action="store_true", help="Utiliser bf16 (recommandé sur H100)")
+    p.add_argument(
+        "--no_train_step_log",
+        action="store_true",
+        help="Ne pas écrire timing_train_steps.jsonl (un JSON par step optimiseur).",
+    )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    log_train("train_qwen3vl", "Démarrage entraînement LoRA (3DSRBench).")
     AutoProcessor, Qwen3VLForConditionalGeneration = _import_qwen()
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -147,6 +153,7 @@ def main() -> None:
     timing["data_3dsrbench"]["rows_used"] = len(rows)
     timing["full_dataset_3dsrbench"] = bool(args.full_dataset)
     timing["steps"].append({"name": "load_3dsrbench_rows", "s": time.perf_counter() - t0})
+    log_train("train_qwen3vl", f"Exemples 3DSRBench chargés : {len(rows)}")
 
     t0 = time.perf_counter()
     dtype = torch.bfloat16 if args.bf16 else torch.float32
@@ -179,24 +186,62 @@ def main() -> None:
     ds = BenchDataset(rows)
     dl = DataLoader(ds, batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_list_of_dicts)
 
+    steps_jsonl = out_dir / "timing_train_steps.jsonl"
+    step_fp = None
+    if not args.no_train_step_log:
+        step_fp = open(steps_jsonl, "w", encoding="utf-8")
+        step_fp.write(
+            json.dumps(
+                {"event": "header", "backend": "qwen3vl", "note": "one line per optimizer step (batch_size=1)"},
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+        log_train("train_qwen3vl", f"Journal par step : {steps_jsonl}")
+    timing["timing_train_steps_jsonl"] = None if args.no_train_step_log else str(steps_jsonl.name)
+
     model.train()
     epoch_times: List[float] = []
-    for ep in range(args.epochs):
-        t_ep = time.perf_counter()
-        pbar = tqdm(dl, desc=f"epoch {ep+1}/{args.epochs}")
-        for batch in pbar:
-            opt.zero_grad(set_to_none=True)
-            inputs = collate_qwen3(batch, processor, device)
-            if args.bf16:
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    global_step = 0
+    try:
+        for ep in range(args.epochs):
+            t_ep = time.perf_counter()
+            pbar = tqdm(dl, desc=f"epoch {ep+1}/{args.epochs}")
+            for bi, batch in enumerate(pbar):
+                t_step = time.perf_counter()
+                opt.zero_grad(set_to_none=True)
+                inputs = collate_qwen3(batch, processor, device)
+                if args.bf16:
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                        out = model(**inputs)
+                else:
                     out = model(**inputs)
-            else:
-                out = model(**inputs)
-            loss = out.loss
-            loss.backward()
-            opt.step()
-            pbar.set_postfix(loss=float(loss.item()))
-        epoch_times.append(time.perf_counter() - t_ep)
+                loss = out.loss
+                loss.backward()
+                opt.step()
+                dt = time.perf_counter() - t_step
+                pbar.set_postfix(loss=float(loss.item()))
+                if step_fp:
+                    step_fp.write(
+                        json.dumps(
+                            {
+                                "event": "train_step",
+                                "backend": "qwen3vl",
+                                "step": global_step,
+                                "epoch": ep,
+                                "index_in_epoch": bi,
+                                "loss": float(loss.item()),
+                                "step_s": dt,
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+                global_step += 1
+            epoch_times.append(time.perf_counter() - t_ep)
+    finally:
+        if step_fp:
+            step_fp.close()
 
     timing["epochs_s"] = epoch_times
     timing["train_total_s"] = time.perf_counter() - t_all

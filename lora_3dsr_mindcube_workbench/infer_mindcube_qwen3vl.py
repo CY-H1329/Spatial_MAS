@@ -14,7 +14,15 @@ from peft import PeftModel
 from tqdm import tqdm
 
 from mc_common import log_infer
-from mindcube_io import Split, ensure_mindcube_extracted, load_mindcube_images, load_mindcube_rows, mindcube_root
+from mindcube_io import (
+    Split,
+    aggregate_timing_infer_by_category,
+    ensure_mindcube_extracted,
+    load_mindcube_images,
+    load_mindcube_rows,
+    mindcube_row_meta,
+    mindcube_root,
+)
 
 
 def _import_qwen():
@@ -94,6 +102,7 @@ def main() -> None:
     correct = 0
     total = 0
     latencies: List[float] = []
+    step_records: List[Dict[str, Any]] = []
 
     with open(jsonl_path, "w", encoding="utf-8") as fj:
         fj.write(json.dumps({"event": "model_load", "load_model_s": load_model_s, "backend": "qwen3vl"}, ensure_ascii=False) + "\n")
@@ -141,23 +150,26 @@ def main() -> None:
             total_s = time.perf_counter() - t_sample
             latencies.append(total_s)
 
-            fj.write(
-                json.dumps(
-                    {
-                        "i": i,
-                        "load_images_s": load_images_s,
-                        "preprocess_s": preprocess_s,
-                        "generate_s": generate_s,
-                        "total_sample_s": total_s,
-                        "pred_raw": text,
-                        "pred": pred,
-                        "gt": gt,
-                        "correct": ok,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+            rec: Dict[str, Any] = {
+                "event": "infer_step",
+                "backend": "qwen3vl",
+                "i": i,
+                "load_images_s": load_images_s,
+                "preprocess_s": preprocess_s,
+                "generate_s": generate_s,
+                "total_sample_s": total_s,
+                "pred_raw": text,
+                "pred": pred,
+                "gt": gt,
+                "correct": ok,
+                **mindcube_row_meta(row),
+            }
+            step_records.append(rec)
+            fj.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    by_cat_path = out_dir / "timing_infer_by_category.json"
+    with open(by_cat_path, "w", encoding="utf-8") as f:
+        json.dump(aggregate_timing_infer_by_category(step_records), f, indent=2, ensure_ascii=False)
 
     summary = {
         "backend": "qwen3vl",
@@ -171,6 +183,8 @@ def main() -> None:
         "total_scored": total,
         "mean_total_sample_s": sum(latencies) / max(len(latencies), 1),
         "sum_total_sample_s": sum(latencies),
+        "timing_infer_jsonl": str(jsonl_path.name),
+        "timing_infer_by_category_json": str(by_cat_path.name),
     }
     with open(out_dir / "timing_infer_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)

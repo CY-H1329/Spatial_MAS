@@ -5,6 +5,7 @@ import json
 import os
 import zipfile
 from pathlib import Path
+from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional
 
 from PIL import Image
@@ -94,3 +95,80 @@ def load_mindcube_images(root: Path, rel_paths: List[str]) -> List[Image.Image]:
             raise FileNotFoundError(f"Image MindCube introuvable : {rel} → {p}")
         out.append(Image.open(p).convert("RGB"))
     return out
+
+
+def mindcube_row_meta(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Champs dataset pour logs d'inférence (alignement sans dépendre du seul index)."""
+    raw = row.get("category")
+    if raw is None:
+        category: List[Any] = []
+    elif isinstance(raw, list):
+        category = list(raw)
+    else:
+        category = [raw]
+    return {
+        "sample_id": row.get("id"),
+        "category": category,
+        "mindcube_type": row.get("type"),
+    }
+
+
+def aggregate_timing_infer_by_category(step_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Agrège précision et temps par catégorie / type à partir des lignes infer_step."""
+    by_cat0: Dict[str, dict] = defaultdict(lambda: {"n": 0, "correct": 0, "sum_total": 0.0})
+    by_type: Dict[str, dict] = defaultdict(lambda: {"n": 0, "correct": 0, "sum_total": 0.0})
+    by_tag: Dict[str, dict] = defaultdict(lambda: {"n": 0, "correct": 0, "sum_total": 0.0})
+    n_scored = 0
+    sum_correct = 0
+    sum_time = 0.0
+    n_all = 0
+    for rec in step_records:
+        n_all += 1
+        ok = bool(rec.get("correct"))
+        tot = float(rec.get("total_sample_s", 0.0))
+        sum_time += tot
+        if rec.get("gt") in ("A", "B", "C", "D"):
+            n_scored += 1
+            sum_correct += int(ok)
+        cat = rec.get("category")
+        if not isinstance(cat, list):
+            cat = [] if cat is None else [cat]
+        c0 = str(cat[0]) if cat else "(none)"
+        by_cat0[c0]["n"] += 1
+        by_cat0[c0]["correct"] += int(ok)
+        by_cat0[c0]["sum_total"] += tot
+        mt = rec.get("mindcube_type")
+        tkey = str(mt) if mt is not None else "(none)"
+        by_type[tkey]["n"] += 1
+        by_type[tkey]["correct"] += int(ok)
+        by_type[tkey]["sum_total"] += tot
+        for tag in cat:
+            s = str(tag)
+            by_tag[s]["n"] += 1
+            by_tag[s]["correct"] += int(ok)
+            by_tag[s]["sum_total"] += tot
+
+    def _finalize(m: Dict[str, dict]) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        for k, v in sorted(m.items(), key=lambda x: (-x[1]["n"], x[0])):
+            n = v["n"]
+            out[k] = {
+                "count": n,
+                "accuracy": (v["correct"] / n) if n else 0.0,
+                "correct": v["correct"],
+                "mean_total_sample_s": (v["sum_total"] / n) if n else 0.0,
+            }
+        return out
+
+    return {
+        "steps": n_all,
+        "scored": n_scored,
+        "overall": {
+            "accuracy": (sum_correct / n_scored) if n_scored else 0.0,
+            "correct": sum_correct,
+            "mean_total_sample_s": (sum_time / n_all) if n_all else 0.0,
+        },
+        "by_category_first": _finalize(dict(by_cat0)),
+        "by_mindcube_type": _finalize(dict(by_type)),
+        "by_category_tag_any": _finalize(dict(by_tag)),
+    }

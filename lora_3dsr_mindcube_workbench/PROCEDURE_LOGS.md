@@ -7,9 +7,9 @@
 3. **Injection LoRA (PEFT)** — `get_peft_model`, affichage des paramètres entraînables.
 4. **Boucle d’epochs** — batch size 1, une étape `forward` + `backward` + optimiseur par exemple.
 5. **Sauvegarde** — adaptateurs + processeur dans `--output_dir`.
-6. **Écriture des temps** — fichier unique **`timing_train.json`** à la fin (et en sortie console).
+6. **Écriture des temps** — fichier unique **`timing_train.json`** à la fin (et en sortie console), plus en parallèle **`timing_train_steps.jsonl`** (une ligne JSON par step optimiseur, équivalent « par requête » avec batch 1), sauf si tu passes **`--no_train_step_log`**.
 
-Les messages **tqdm** pendant l’epoch indiquent la progression ; ce n’est **pas** un second fichier de log ligne par ligne pendant le train.
+Les messages **tqdm** et, selon le backend, des logs console (`log_train` / `log_infer`) indiquent la progression.
 
 ## Contenu typique de `timing_train.json`
 
@@ -22,13 +22,20 @@ Les messages **tqdm** pendant l’epoch indiquent la progression ; ce n’est **
 | `epochs_s` | Liste (une entrée par epoch) : durée totale de chaque epoch. |
 | `train_total_s` | Durée totale script (données + entraînement + sauvegarde). |
 | `per_epoch_mean_s` | Moyenne des durées d’epoch. |
+| `timing_train_steps_jsonl` | Nom du fichier `timing_train_steps.jsonl` (ou `null` si `--no_train_step_log`). |
+
+### `timing_train_steps.jsonl` (entraînement)
+
+Chaque ligne est un objet JSON, typiquement avec `event: "train_step"`, `backend`, `step`, `epoch`, `index_in_epoch`, `loss`, `step_s` (secondes du step). Certains backends peuvent écrire des entrées `skipped` ou `error` au lieu d’un step avec loss.
 
 ## Inférence MindCube (après le train)
 
 Fichiers dans `--output_dir` de l’infer :
 
-- **`timing_infer.jsonl`** — une ligne JSON par échantillon (`preprocess_s`, `generate_s`, `total_sample_s`, etc.).
-- **`timing_infer_summary.json`** — agrégats (`load_model_s`, `mean_total_sample_s`, `accuracy`, …).
+- **`timing_infer.jsonl`** — une ligne JSON par échantillon, schéma unifié : `event: "infer_step"`, `backend`, `i`, `load_images_s`, `preprocess_s`, `generate_s`, `total_sample_s`, prédictions et `correct` si scoring disponible, plus **`sample_id`**, **`category`** (liste issue du JSONL MindCube) et **`mindcube_type`**. Pour les runners « monolithiques » (ex. Sa2VA / SpatialRGPT), `preprocess_s` peut être `0.0`.
+- **`timing_infer_summary.json`** — agrégats (`load_model_s`, `mean_total_sample_s`, `sum_total_sample_s`, `timing_infer_jsonl`, `timing_infer_by_category_json`, `accuracy`, …).
+- **`timing_infer_by_category.json`** — résumé **par catégorie** : `by_category_first` (1er tag), `by_mindcube_type`, `by_category_tag_any` (chaque tag de la liste), plus `overall` recalculé.
+- Ancien JSONL sans métadonnées : `python rebuild_timing_infer_by_category.py --timing_infer_jsonl ... --mindcube_jsonl ...` (même ordre d’exemples que le JSONL MindCube utilisé pour l’éval).
 
 ---
 

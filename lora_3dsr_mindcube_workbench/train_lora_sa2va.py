@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
-from mc_common import collate_list_of_dicts
+from mc_common import collate_list_of_dicts, log_train
 from spatial_mas_src2 import insert_src2
 
 
@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora_alpha", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--image_cache", type=str, default="./data/3dsr_image_cache")
+    p.add_argument("--no_train_step_log", action="store_true", help="Sans timing_train_steps.jsonl.")
     return p.parse_args()
 
 
@@ -79,6 +80,7 @@ def _maybe_loss_from_predict(model: Any, image, tokenizer, user_text: str, lette
 
 def main() -> None:
     args = parse_args()
+    log_train("train_sa2va", "Démarrage entraînement (3DSRBench).")
     insert_src2()
     from models.sa2va import Sa2VARunner
 
@@ -95,6 +97,7 @@ def main() -> None:
     timing["data_3dsrbench"] = load_timing
     timing["data_3dsrbench"]["rows_used"] = len(rows)
     timing["full_dataset_3dsrbench"] = bool(args.full_dataset)
+    log_train("train_sa2va", f"Exemples 3DSRBench : {len(rows)}")
 
     t0 = time.perf_counter()
     runner = Sa2VARunner(model_id=args.model_id, device="cuda")
@@ -140,20 +143,71 @@ def main() -> None:
     opt = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr)
     dl = DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_list_of_dicts)
 
+    steps_jsonl = out_dir / "timing_train_steps.jsonl"
+    step_fp = None
+    if not args.no_train_step_log:
+        step_fp = open(steps_jsonl, "w", encoding="utf-8")
+        step_fp.write(json.dumps({"event": "header", "backend": "sa2va"}, ensure_ascii=False) + "\n")
+        log_train("train_sa2va", f"Journal par step : {steps_jsonl}")
+    timing["timing_train_steps_jsonl"] = None if args.no_train_step_log else str(steps_jsonl.name)
+
     trained = 0
-    for ep in range(args.epochs):
-        for batch in tqdm(dl, desc=f"sa2va epoch {ep+1}"):
-            ex = batch[0]
-            image = ex["image"]
-            ut = build_user_text(ex["question"], ex["options_block"])
-            letter = ex["answer"]
-            loss = _maybe_loss_from_predict(model, image, tokenizer, ut, letter)
-            if loss is None:
-                continue
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            opt.step()
-            trained += 1
+    global_step = 0
+    try:
+        for ep in range(args.epochs):
+            for bi, batch in enumerate(tqdm(dl, desc=f"sa2va epoch {ep+1}")):
+                t_step = time.perf_counter()
+                ex = batch[0]
+                image = ex["image"]
+                ut = build_user_text(ex["question"], ex["options_block"])
+                letter = ex["answer"]
+                loss = _maybe_loss_from_predict(model, image, tokenizer, ut, letter)
+                if loss is None:
+                    dt = time.perf_counter() - t_step
+                    if step_fp:
+                        step_fp.write(
+                            json.dumps(
+                                {
+                                    "event": "train_step",
+                                    "backend": "sa2va",
+                                    "step": global_step,
+                                    "epoch": ep,
+                                    "index_in_epoch": bi,
+                                    "skipped": True,
+                                    "reason": "no_differentiable_loss",
+                                    "step_s": dt,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                    global_step += 1
+                    continue
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
+                dt = time.perf_counter() - t_step
+                trained += 1
+                if step_fp:
+                    step_fp.write(
+                        json.dumps(
+                            {
+                                "event": "train_step",
+                                "backend": "sa2va",
+                                "step": global_step,
+                                "epoch": ep,
+                                "index_in_epoch": bi,
+                                "loss": float(loss.item()),
+                                "step_s": dt,
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+                global_step += 1
+    finally:
+        if step_fp:
+            step_fp.close()
 
     timing["train_total_s"] = time.perf_counter() - t_all
     timing["optimizer_steps_with_loss"] = trained

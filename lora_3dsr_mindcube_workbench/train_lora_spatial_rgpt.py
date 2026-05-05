@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from dsrbench_io import build_user_text, load_3dsrbench_rows
-from mc_common import collate_list_of_dicts
+from mc_common import collate_list_of_dicts, log_train
 from spatial_mas_src2 import insert_src2
 
 
@@ -51,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora_alpha", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--image_cache", type=str, default="./data/3dsr_image_cache")
+    p.add_argument("--no_train_step_log", action="store_true", help="Sans timing_train_steps.jsonl.")
     return p.parse_args()
 
 
@@ -101,6 +102,7 @@ def build_batch_spatial_rgpt(
 
 def main() -> None:
     args = parse_args()
+    log_train("train_spatial_rgpt", "Démarrage entraînement (3DSRBench).")
     insert_src2()
     from models.spatial_rgpt import SpatialRGPTRunner, _make_placeholder_depth
 
@@ -117,6 +119,7 @@ def main() -> None:
     timing["data_3dsrbench"] = load_timing
     timing["data_3dsrbench"]["rows_used"] = len(rows)
     timing["full_dataset_3dsrbench"] = bool(args.full_dataset)
+    log_train("train_spatial_rgpt", f"Exemples 3DSRBench : {len(rows)}")
 
     t0 = time.perf_counter()
     runner = SpatialRGPTRunner(model_id=args.model_id, device="cuda")
@@ -152,39 +155,124 @@ def main() -> None:
     steps = 0
     forward_ok = False
 
-    for ep in range(args.epochs):
-        for batch in tqdm(
-            DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, collate_fn=collate_list_of_dicts),
-            desc=f"srgpt ep{ep+1}",
-        ):
-            ex = batch[0]
-            ut = build_user_text(ex["question"], ex["options_block"])
-            b = build_batch_spatial_rgpt(runner, ex["image"], ut, ex["answer"], device)
-            if b is None:
-                continue
-            opt.zero_grad(set_to_none=True)
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    out = model(
-                        input_ids=b["input_ids"],
-                        images=b["images"],
-                        depths=b["depths"],
-                        masks=b["masks"],
-                        labels=b["labels"],
-                    )
-                loss = getattr(out, "loss", None)
-                if loss is None:
+    steps_jsonl = out_dir / "timing_train_steps.jsonl"
+    step_fp = None
+    if not args.no_train_step_log:
+        step_fp = open(steps_jsonl, "w", encoding="utf-8")
+        step_fp.write(json.dumps({"event": "header", "backend": "spatial_rgpt"}, ensure_ascii=False) + "\n")
+        log_train("train_spatial_rgpt", f"Journal par step : {steps_jsonl}")
+    timing["timing_train_steps_jsonl"] = None if args.no_train_step_log else str(steps_jsonl.name)
+
+    global_step = 0
+    try:
+        for ep in range(args.epochs):
+            for bi, batch in enumerate(
+                tqdm(
+                    DataLoader(BenchDataset(rows), batch_size=1, shuffle=True, collate_fn=collate_list_of_dicts),
+                    desc=f"srgpt ep{ep+1}",
+                )
+            ):
+                t_step = time.perf_counter()
+                ex = batch[0]
+                ut = build_user_text(ex["question"], ex["options_block"])
+                b = build_batch_spatial_rgpt(runner, ex["image"], ut, ex["answer"], device)
+                if b is None:
+                    if step_fp:
+                        step_fp.write(
+                            json.dumps(
+                                {
+                                    "event": "train_step",
+                                    "backend": "spatial_rgpt",
+                                    "step": global_step,
+                                    "epoch": ep,
+                                    "index_in_epoch": bi,
+                                    "skipped": True,
+                                    "reason": "batch_build_failed",
+                                    "step_s": time.perf_counter() - t_step,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                    global_step += 1
                     continue
-                loss.backward()
-                opt.step()
-                steps += 1
-                forward_ok = True
-            except Exception as e:
-                timing.setdefault("forward_errors", []).append(repr(e))
+                opt.zero_grad(set_to_none=True)
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        out = model(
+                            input_ids=b["input_ids"],
+                            images=b["images"],
+                            depths=b["depths"],
+                            masks=b["masks"],
+                            labels=b["labels"],
+                        )
+                    loss = getattr(out, "loss", None)
+                    if loss is None:
+                        if step_fp:
+                            step_fp.write(
+                                json.dumps(
+                                    {
+                                        "event": "train_step",
+                                        "backend": "spatial_rgpt",
+                                        "step": global_step,
+                                        "epoch": ep,
+                                        "index_in_epoch": bi,
+                                        "skipped": True,
+                                        "reason": "no_loss_in_output",
+                                        "step_s": time.perf_counter() - t_step,
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                        global_step += 1
+                        continue
+                    loss.backward()
+                    opt.step()
+                    dt = time.perf_counter() - t_step
+                    steps += 1
+                    forward_ok = True
+                    if step_fp:
+                        step_fp.write(
+                            json.dumps(
+                                {
+                                    "event": "train_step",
+                                    "backend": "spatial_rgpt",
+                                    "step": global_step,
+                                    "epoch": ep,
+                                    "index_in_epoch": bi,
+                                    "loss": float(loss.item()),
+                                    "step_s": dt,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                    global_step += 1
+                except Exception as e:
+                    timing.setdefault("forward_errors", []).append(repr(e))
+                    if step_fp:
+                        step_fp.write(
+                            json.dumps(
+                                {
+                                    "event": "train_step",
+                                    "backend": "spatial_rgpt",
+                                    "step": global_step,
+                                    "epoch": ep,
+                                    "error": repr(e),
+                                    "step_s": time.perf_counter() - t_step,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                    break
+            if timing.get("forward_errors"):
                 break
-        if timing.get("forward_errors"):
-            break
+    finally:
+        if step_fp:
+            step_fp.close()
 
     timing["train_total_s"] = time.perf_counter() - t_all
     timing["optimizer_steps"] = steps

@@ -13,7 +13,16 @@ import torch
 from peft import PeftModel
 from tqdm import tqdm
 
-from mindcube_io import Split, ensure_mindcube_extracted, load_mindcube_images, load_mindcube_rows, mindcube_root
+from mc_common import log_infer
+from mindcube_io import (
+    Split,
+    aggregate_timing_infer_by_category,
+    ensure_mindcube_extracted,
+    load_mindcube_images,
+    load_mindcube_rows,
+    mindcube_row_meta,
+    mindcube_root,
+)
 
 
 def parse_letter(text: str) -> Optional[str]:
@@ -39,7 +48,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    TAG = "infer_spatial_reasoner"
     args = parse_args()
+    log_infer(TAG, "Démarrage.")
     from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
     split: Split = args.mindcube_split  # type: ignore[assignment]
@@ -47,12 +58,15 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = out_dir / "timing_infer.jsonl"
 
+    log_infer(TAG, "MindCube…")
     ensure_mindcube_extracted()
     cap_rows = None if args.full_dataset else args.max_samples
     rows = load_mindcube_rows(split=split, max_samples=cap_rows, seed=42)
+    log_infer(TAG, f"{len(rows)} exemples.")
 
     dtype = torch.bfloat16 if args.bf16 else torch.float32
     t0 = time.perf_counter()
+    log_infer(TAG, "Chargement processeur + SpatialReasoner…")
     processor = AutoProcessor.from_pretrained(args.processor_id, trust_remote_code=True)
     base = Qwen2_5_VLForConditionalGeneration.from_pretrained(
         args.base_model_id, dtype=dtype, trust_remote_code=True
@@ -62,10 +76,12 @@ def main() -> None:
     model.eval()
     dev = next(model.parameters()).device
     load_model_s = time.perf_counter() - t0
+    log_infer(TAG, f"Prêt en {load_model_s:.1f}s — tqdm.")
 
     correct = 0
     total = 0
     latencies: List[float] = []
+    step_records: List[Dict[str, Any]] = []
 
     with open(jsonl_path, "w", encoding="utf-8") as fj:
         fj.write(json.dumps({"event": "model_load", "backend": "spatial_reasoner", "load_model_s": load_model_s}, ensure_ascii=False) + "\n")
@@ -76,7 +92,9 @@ def main() -> None:
             rels = row.get("images") or []
             if not isinstance(rels, list):
                 rels = [rels]
+            t_img0 = time.perf_counter()
             images = load_mindcube_images(mindcube_root(), [str(x) for x in rels])
+            load_images_s = time.perf_counter() - t_img0
             user_tail = question + "\n\nRéponds uniquement par une seule lettre : A, B, C ou D."
             content: List[Dict[str, Any]] = []
             for im in images:
@@ -109,22 +127,26 @@ def main() -> None:
                 total += 1
                 correct += int(ok)
             latencies.append(time.perf_counter() - t0s)
-            fj.write(
-                json.dumps(
-                    {
-                        "i": i,
-                        "preprocess_s": preprocess_s,
-                        "generate_s": generate_s,
-                        "total_sample_s": latencies[-1],
-                        "pred_raw": text,
-                        "pred": pred,
-                        "gt": gt,
-                        "correct": ok,
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+            rec: Dict[str, Any] = {
+                "event": "infer_step",
+                "backend": "spatial_reasoner",
+                "i": i,
+                "load_images_s": load_images_s,
+                "preprocess_s": preprocess_s,
+                "generate_s": generate_s,
+                "total_sample_s": latencies[-1],
+                "pred_raw": text,
+                "pred": pred,
+                "gt": gt,
+                "correct": ok,
+                **mindcube_row_meta(row),
+            }
+            step_records.append(rec)
+            fj.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+    by_cat_path = out_dir / "timing_infer_by_category.json"
+    with open(by_cat_path, "w", encoding="utf-8") as f:
+        json.dump(aggregate_timing_infer_by_category(step_records), f, indent=2, ensure_ascii=False)
 
     summary = {
         "backend": "spatial_reasoner",
@@ -136,6 +158,9 @@ def main() -> None:
         "total_scored": total,
         "load_model_s": load_model_s,
         "mean_total_sample_s": sum(latencies) / max(len(latencies), 1),
+        "sum_total_sample_s": sum(latencies),
+        "timing_infer_jsonl": str(jsonl_path.name),
+        "timing_infer_by_category_json": str(by_cat_path.name),
     }
     with open(out_dir / "timing_infer_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
