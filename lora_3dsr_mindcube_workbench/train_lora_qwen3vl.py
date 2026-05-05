@@ -115,6 +115,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model_id", type=str, default="Qwen/Qwen3-VL-4B-Instruct")
     p.add_argument("--output_dir", type=str, default="./outputs/lora_3dsr_qwen3vl")
     p.add_argument("--max_train_samples", type=int, default=150)
+    p.add_argument(
+        "--full_dataset",
+        action="store_true",
+        help="Utiliser tout le split test 3DSRBench (ignore --max_train_samples).",
+    )
     p.add_argument("--epochs", type=int, default=1)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--lora_r", type=int, default=16)
@@ -136,9 +141,11 @@ def main() -> None:
     t_all = time.perf_counter()
 
     t0 = time.perf_counter()
-    rows, load_timing = load_3dsrbench_rows(max_samples=args.max_train_samples, seed=args.seed, cache_dir=cache_dir)
+    cap_train = None if args.full_dataset else args.max_train_samples
+    rows, load_timing = load_3dsrbench_rows(max_samples=cap_train, seed=args.seed, cache_dir=cache_dir)
     timing["data_3dsrbench"] = load_timing
     timing["data_3dsrbench"]["rows_used"] = len(rows)
+    timing["full_dataset_3dsrbench"] = bool(args.full_dataset)
     timing["steps"].append({"name": "load_3dsrbench_rows", "s": time.perf_counter() - t0})
 
     t0 = time.perf_counter()

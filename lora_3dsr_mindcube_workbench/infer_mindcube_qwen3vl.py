@@ -38,6 +38,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--adapter_dir", type=str, required=True)
     p.add_argument("--mindcube_split", type=str, default="tinybench", choices=["test", "train", "tinybench"])
     p.add_argument("--max_samples", type=int, default=50)
+    p.add_argument(
+        "--full_dataset",
+        action="store_true",
+        help="Évaluer tout le split MindCube (--mindcube_split), ignore --max_samples.",
+    )
     p.add_argument("--output_dir", type=str, default="./outputs/mindcube_infer_qwen3vl")
     p.add_argument("--max_new_tokens", type=int, default=8)
     p.add_argument("--bf16", action="store_true")
@@ -54,7 +59,8 @@ def main() -> None:
     jsonl_path = out_dir / "timing_infer.jsonl"
 
     root = ensure_mindcube_extracted()
-    rows = load_mindcube_rows(split=split, max_samples=args.max_samples, seed=42)
+    cap_rows = None if args.full_dataset else args.max_samples
+    rows = load_mindcube_rows(split=split, max_samples=cap_rows, seed=42)
 
     if not torch.cuda.is_available():
         raise SystemExit("CUDA requis pour infer_mindcube_qwen3vl.py")
@@ -145,7 +151,9 @@ def main() -> None:
     summary = {
         "backend": "qwen3vl",
         "mindcube_split": split,
-        "max_samples": args.max_samples,
+        "full_dataset": bool(args.full_dataset),
+        "rows_evaluated": len(rows),
+        "max_samples_cap": None if args.full_dataset else args.max_samples,
         "load_model_s": load_model_s,
         "accuracy": (correct / total) if total else 0.0,
         "correct": correct,

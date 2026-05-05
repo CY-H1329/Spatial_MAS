@@ -29,6 +29,11 @@ Ce dossier vit sous la racine **Spatial_MAS** (`lora_3dsr_mindcube_workbench/`) 
 - GPU NVIDIA (CUDA).
 - `pip install -r requirements.txt` puis souvent `pip install "git+https://github.com/huggingface/transformers.git"` (Qwen3-VL / versions récentes).
 
+## Dataset complet
+
+- **Train** : `--full_dataset` → tout le split **test** de 3DSRBench (sans plafond `--max_train_samples`).
+- **Infer** : `--full_dataset` → toutes les lignes du JSONL MindCube pour `--mindcube_split` (`test` / `train` / `tinybench`).
+
 ## Commandes détaillées
 
 Voir **`COMMANDS.md`** (copier-coller par modèle).

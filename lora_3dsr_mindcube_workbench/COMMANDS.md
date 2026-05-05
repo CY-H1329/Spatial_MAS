@@ -9,6 +9,8 @@ source .venv/bin/activate   # si venv déjà créé
 
 SpatialRGPT : `export SPATIALRGPT_PATH=/chemin/vers/SpatialRGPT` (clone officiel).
 
+**Dataset complet** : ajoutez `--full_dataset` aux scripts **train** (tout le split test 3DSRBench) et **infer** (toutes les lignes du `--mindcube_split` choisi). Sinon `--max_train_samples` / `--max_samples` s’appliquent.
+
 ---
 
 ## 1) Qwen3-VL-4B
@@ -16,6 +18,13 @@ SpatialRGPT : `export SPATIALRGPT_PATH=/chemin/vers/SpatialRGPT` (clone officiel
 ```bash
 python train_lora_qwen3vl.py --output_dir ./out/qwen3 --bf16
 python infer_mindcube_qwen3vl.py --adapter_dir ./out/qwen3 --bf16
+```
+
+Full 3DSRBench + MindCube tinybench entier :
+
+```bash
+python train_lora_qwen3vl.py --output_dir ./out/qwen3 --bf16 --full_dataset
+python infer_mindcube_qwen3vl.py --adapter_dir ./out/qwen3 --bf16 --mindcube_split tinybench --full_dataset
 ```
 
 ## 2) LLaVA-NeXT 7B

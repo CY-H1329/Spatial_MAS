@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--adapter_dir", type=str, default="", help="Vide = base seule ; sinon dossier PEFT")
     p.add_argument("--mindcube_split", type=str, default="tinybench", choices=["test", "train", "tinybench"])
     p.add_argument("--max_samples", type=int, default=50)
+    p.add_argument("--full_dataset", action="store_true", help="Tout le split MindCube.")
     p.add_argument("--output_dir", type=str, default="./outputs/mindcube_infer_sa2va")
     return p.parse_args()
 
@@ -38,7 +39,8 @@ def main() -> None:
     jsonl_path = out_dir / "timing_infer.jsonl"
 
     ensure_mindcube_extracted()
-    rows = load_mindcube_rows(split=split, max_samples=args.max_samples, seed=42)
+    cap_rows = None if args.full_dataset else args.max_samples
+    rows = load_mindcube_rows(split=split, max_samples=cap_rows, seed=42)
 
     t0 = time.perf_counter()
     runner = Sa2VARunner(model_id=args.model_id, device="cuda")
@@ -92,6 +94,8 @@ def main() -> None:
     summary = {
         "backend": "sa2va",
         "mindcube_split": split,
+        "full_dataset": bool(args.full_dataset),
+        "rows_evaluated": len(rows),
         "accuracy": (correct / total) if total else 0.0,
         "correct": correct,
         "total_scored": total,
