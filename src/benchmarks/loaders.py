@@ -262,11 +262,21 @@ def _load_mindcube_dataset(split: str = "test", max_samples: Optional[int] = Non
                 obj["images"] = []
             elif not isinstance(imgs, list):
                 obj["images"] = [imgs]
+            else:
+                # Ensure list elements are JSON-serializable scalars (paths as strings).
+                obj["images"] = [str(x) for x in imgs if x is not None]
             cat = obj.get("category")
             if cat is None:
                 obj["category"] = []
             elif not isinstance(cat, list):
                 obj["category"] = [cat]
+            else:
+                obj["category"] = [str(x) for x in cat if x is not None]
+            meta = obj.get("meta_info")
+            if meta is None:
+                obj["meta_info"] = []
+            elif not isinstance(meta, list):
+                obj["meta_info"] = [meta]
             rows.append(obj)
 
     if max_samples is None or max_samples >= len(rows):
