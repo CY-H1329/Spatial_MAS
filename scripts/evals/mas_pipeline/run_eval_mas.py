@@ -61,10 +61,11 @@ try:
     from src.models.qwen3 import Qwen3Runner
     from src.models.sa2va import Sa2VARunner
     from src.models.llava import LLaVARunner
+    from src.models.spatial_reasoner import SpatialReasonerRunner
     from src.models.deepseek_vl import DeepSeekVLRunner as DeepSeekVLGPURunner
     GPU_AVAILABLE = True
 except ImportError:
-    Qwen3Runner = Sa2VARunner = LLaVARunner = DeepSeekVLGPURunner = None
+    Qwen3Runner = Sa2VARunner = LLaVARunner = SpatialReasonerRunner = DeepSeekVLGPURunner = None
     GPU_AVAILABLE = False
 
 
@@ -158,13 +159,23 @@ def build_runners(config: dict):
 
         if runner_type == "gpu" and GPU_AVAILABLE:
             device = cfg.get("device", "cuda")
+            backend = (cfg.get("backend") or name).lower()
             try:
-                if name == "qwen3_4b":
+                if backend in ("qwen3", "qwen3_4b"):
                     specialist_runners[name] = Qwen3Runner(model_id=model_id, device=device)
-                elif name == "sa2va":
+                elif backend == "sa2va":
                     specialist_runners[name] = Sa2VARunner(model_id=model_id, device=device)
-                elif name == "llava4d":
+                elif backend in ("llava", "llava4d"):
                     specialist_runners[name] = LLaVARunner(model_id=model_id, device=device)
+                elif backend in ("spatial_reasoner", "spatialreasoner"):
+                    processor_id = cfg.get("processor_id", "Qwen/Qwen2.5-VL-7B-Instruct")
+                    bf16 = bool(cfg.get("bf16", True))
+                    specialist_runners[name] = SpatialReasonerRunner(
+                        model_id=model_id or "ccvl/SpatialReasoner",
+                        processor_id=processor_id,
+                        device=device,
+                        bf16=bf16,
+                    )
                 else:
                     specialist_runners[name] = None
             except Exception as e:

@@ -2,6 +2,7 @@ from .base import BaseVLM
 
 # Optional runners — import may fail if deps missing (e.g. qwen, openai)
 QwenRunner = Qwen3Runner = LLaVARunner = Sa2VARunner = None
+SpatialReasonerRunner = None
 DeepSeekVLRunner = GPTRunner = GeminiRunner = None
 
 try:
@@ -25,6 +26,10 @@ try:
 except Exception:
     pass
 try:
+    from .spatial_reasoner import SpatialReasonerRunner
+except Exception:
+    pass
+try:
     from .gpt import GPTRunner
 except Exception:
     pass
@@ -35,5 +40,6 @@ except Exception:
 
 __all__ = [
     "BaseVLM", "QwenRunner", "Qwen3Runner", "LLaVARunner", "Sa2VARunner",
+    "SpatialReasonerRunner",
     "DeepSeekVLRunner", "GPTRunner", "GeminiRunner",
 ]
