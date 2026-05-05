@@ -132,15 +132,15 @@ def load_benchmark(
 
     if benchmark == "mindcube":
         # MindCube isn't provided as a standard HF datasets table here (it is packaged as data.zip).
-        # We download/extract it once and then load jsonl into a datasets.Dataset for compatibility.
-        from datasets import Dataset
-
+        # We download/extract it once and then load jsonl into a list[dict].
+        # NOTE: We intentionally return a python list here (not datasets.Dataset) to avoid
+        # pyarrow schema issues from heterogeneous nested fields in the raw JSONL.
         ds = _load_mindcube_dataset(
             split="test",
             max_samples=max_samples,
             seed=seed,
         )
-        return Dataset.from_list(ds)
+        return ds
 
     # Try frozen benchmark first
     if use_frozen and benchmark in FROZEN_PATHS:
