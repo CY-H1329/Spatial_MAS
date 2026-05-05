@@ -255,6 +255,18 @@ def _load_mindcube_dataset(split: str = "test", max_samples: Optional[int] = Non
             if not line:
                 continue
             obj = json.loads(line)
+            # Normalize schema for pyarrow/Datasets:
+            # some fields can be scalar or list depending on the example.
+            imgs = obj.get("images")
+            if imgs is None:
+                obj["images"] = []
+            elif not isinstance(imgs, list):
+                obj["images"] = [imgs]
+            cat = obj.get("category")
+            if cat is None:
+                obj["category"] = []
+            elif not isinstance(cat, list):
+                obj["category"] = [cat]
             rows.append(obj)
 
     if max_samples is None or max_samples >= len(rows):
