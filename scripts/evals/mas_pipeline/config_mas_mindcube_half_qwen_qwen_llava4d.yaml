@@ -1,0 +1,47 @@
+# Spatial MAS — MindCube (half run) with fixed specialists:
+# - Qwen3-VL-4B (A)
+# - Qwen3-VL-4B (B)
+# - LLaVA4D (LLaVA-1.5-7B)
+#
+# Example (half of MindCube test ≈ 10577):
+#   python scripts/evals/mas_pipeline/run_eval_mas.py \
+#     --config scripts/evals/mas_pipeline/config_mas_mindcube_half_qwen_qwen_llava4d.yaml \
+#     --benchmark mindcube --max_samples 10577
+#
+head_agent:
+  runner: "gpu"
+  backend: "llava"
+  model_id: "llava-hf/llava-v1.6-mistral-7b-hf"
+  device: "cuda"
+
+reasoning_agent:
+  runner: "gpu"
+  model_id: "deepseek-community/deepseek-vl-7b-chat"
+  device: "cuda"
+
+specialists:
+  qwen3_4b_a:
+    runner: "gpu"
+    backend: "qwen3"
+    model_id: "Qwen/Qwen3-VL-4B-Instruct"
+    device: "cuda"
+  qwen3_4b_b:
+    runner: "gpu"
+    backend: "qwen3"
+    model_id: "Qwen/Qwen3-VL-4B-Instruct"
+    device: "cuda"
+  llava4d:
+    runner: "gpu"
+    backend: "llava"
+    model_id: "llava-hf/llava-1.5-7b-hf"
+    device: "cuda"
+
+dataset:
+  benchmark: "mindcube"
+  max_samples: 10577
+  test_samples: 5
+  seed: 42
+
+output:
+  dir: "results/runs/mas_pipeline"
+
