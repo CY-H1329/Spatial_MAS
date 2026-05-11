@@ -5,6 +5,8 @@ See: https://huggingface.co/OpenGVLab/InternVL2-8B
 """
 from __future__ import annotations
 
+import logging
+import warnings
 from typing import Optional
 
 import torch
@@ -12,6 +14,8 @@ import torchvision.transforms as T
 from PIL import Image
 from torchvision.transforms.functional import InterpolationMode
 from transformers import AutoModel, AutoTokenizer
+
+logger = logging.getLogger(__name__)
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -76,6 +80,51 @@ def _dynamic_preprocess(image: Image.Image, min_num=1, max_num=12, image_size=44
     return processed_images
 
 
+def _patch_internvl_language_model_for_transformers_4_50(model: torch.nn.Module) -> None:
+    """
+    InternVL2 remote code calls `language_model.generate(...)`.
+    From transformers v4.50, `PreTrainedModel` no longer inherits `GenerationMixin`, so
+    `InternLM2ForCausalLM` may lack `.generate` (HF warning + AttributeError at runtime).
+
+    Fix: rebind the LM instance to a tiny subclass that adds `GenerationMixin` (same pattern as
+    ms-swift / VLMEvalKit discussions for InternVL2 + recent transformers).
+    """
+    lm = getattr(model, "language_model", None)
+    if lm is None:
+        return
+    if callable(getattr(lm, "generate", None)):
+        return
+    try:
+        from transformers.generation.utils import GenerationMixin
+    except ImportError:
+        warnings.warn(
+            "InternVL2: cannot import GenerationMixin; upgrade transformers or use transformers<4.50."
+        )
+        return
+
+    base_cls = lm.__class__
+    if base_cls.__name__.endswith("_InternVL2GenPatch"):
+        return
+
+    patched_cls = type(
+        f"{base_cls.__name__}_InternVL2GenPatch",
+        (base_cls, GenerationMixin),
+        {},
+    )
+    try:
+        lm.__class__ = patched_cls
+    except Exception as e:
+        warnings.warn(
+            f"InternVL2: failed to patch language_model for GenerationMixin: {e}. "
+            "Try: pip install 'transformers>=4.37.2,<4.50' for this checkpoint."
+        )
+        return
+    logger.info(
+        "InternVL2: patched language_model %s with GenerationMixin for transformers>=4.50 compatibility.",
+        base_cls.__name__,
+    )
+
+
 def _pixel_values_from_pil(image: Image.Image, input_size: int = 448, max_num: int = 12) -> torch.Tensor:
     transform = _build_transform(input_size)
     images = _dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
@@ -117,6 +166,7 @@ class InternVL2Runner:
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
         self.model = AutoModel.from_pretrained(model_id, **load_kw).eval()
+        _patch_internvl_language_model_for_transformers_4_50(self.model)
         if device == "cuda" and torch.cuda.is_available():
             self.model = self.model.cuda()
         self._dtype = torch.bfloat16 if device == "cuda" else torch.float32
