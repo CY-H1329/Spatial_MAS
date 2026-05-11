@@ -152,6 +152,12 @@ def _ensure_generation_config(model: torch.nn.Module) -> None:
         except Exception:
             # best-effort: leave it as-is
             return
+    # Force KV cache on generation_config too (remote code may pass it implicitly)
+    try:
+        if getattr(lm.generation_config, "use_cache", None) is not True:
+            lm.generation_config.use_cache = True
+    except Exception:
+        pass
 
 
 def _pixel_values_from_pil(image: Image.Image, input_size: int = 448, max_num: int = 12) -> torch.Tensor:
