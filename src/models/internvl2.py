@@ -125,6 +125,28 @@ def _patch_internvl_language_model_for_transformers_4_50(model: torch.nn.Module)
     )
 
 
+def _ensure_generation_config(model: torch.nn.Module) -> None:
+    """
+    After adding GenerationMixin, `transformers` expects `self.generation_config` to be set.
+    Some remote-code models keep it as None -> AttributeError in GenerationMixin.generate().
+    """
+    try:
+        from transformers import GenerationConfig
+    except Exception:
+        return
+
+    lm = getattr(model, "language_model", None)
+    if lm is None:
+        return
+
+    if getattr(lm, "generation_config", None) is None:
+        try:
+            lm.generation_config = GenerationConfig.from_model_config(lm.config)
+        except Exception:
+            # best-effort: leave it as-is
+            return
+
+
 def _pixel_values_from_pil(image: Image.Image, input_size: int = 448, max_num: int = 12) -> torch.Tensor:
     transform = _build_transform(input_size)
     images = _dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
@@ -167,6 +189,7 @@ class InternVL2Runner:
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
         self.model = AutoModel.from_pretrained(model_id, **load_kw).eval()
         _patch_internvl_language_model_for_transformers_4_50(self.model)
+        _ensure_generation_config(self.model)
         if device == "cuda" and torch.cuda.is_available():
             self.model = self.model.cuda()
         self._dtype = torch.bfloat16 if device == "cuda" else torch.float32
