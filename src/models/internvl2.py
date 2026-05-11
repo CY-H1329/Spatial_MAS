@@ -216,6 +216,8 @@ class InternVL2Runner:
         generation_config = dict(
             max_new_tokens=max_new_tokens,
             do_sample=temperature > 0,
+            # InternLM2 remote-code can crash if past_key_values stays None; ensure KV cache is used.
+            use_cache=True,
         )
         if temperature > 0:
             generation_config["temperature"] = temperature
