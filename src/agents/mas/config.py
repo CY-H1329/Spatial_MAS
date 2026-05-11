@@ -19,6 +19,7 @@ CANDIDATE_AGENTS = [
     "sa2va",
     "internvl2",
     "qwen2_vl",
+    "qwen25_vl",
     "claude_sonnet_4_5",
     "gpt4o",
     "gemini_robotics_er",
@@ -178,6 +179,19 @@ AGENT_PROFILES: Dict[str, Dict[str, float]] = {
         "instance_location": 0.73,
         "size": 0.72,
         "reach": 0.70,
+    },
+    "qwen25_vl": {
+        "description": "Qwen2.5-VL-7B-Instruct: stable HF VLM (fallback when InternVL2 remote-code is unstable).",
+        "3dsrbench_overall": 0.60,
+        "depth": 0.90,
+        "relation": 0.82,
+        "distance": 0.80,
+        "count": 0.70,
+        "orientation": 0.80,
+        "existence": 0.75,
+        "instance_location": 0.74,
+        "size": 0.73,
+        "reach": 0.71,
     },
 }
 

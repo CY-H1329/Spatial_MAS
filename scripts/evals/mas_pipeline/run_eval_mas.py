@@ -66,10 +66,11 @@ try:
     from src.models.sa2va import Sa2VARunner
     from src.models.llava import LLaVARunner
     from src.models.spatial_reasoner import SpatialReasonerRunner
+    from src.models.qwen import QwenRunner
     from src.models.deepseek_vl import DeepSeekVLRunner as DeepSeekVLGPURunner
     GPU_AVAILABLE = True
 except ImportError:
-    Qwen3Runner = Sa2VARunner = LLaVARunner = SpatialReasonerRunner = DeepSeekVLGPURunner = None
+    Qwen3Runner = Sa2VARunner = LLaVARunner = SpatialReasonerRunner = QwenRunner = DeepSeekVLGPURunner = None
     GPU_AVAILABLE = False
 
 InternVL2Runner = None
@@ -234,6 +235,12 @@ def build_runners(config: dict):
                     mid = model_id or "Qwen/Qwen2-VL-7B-Instruct"
                     specialist_runners[name] = _LazySpecialistRunner(
                         lambda mid=mid, dev=device: Qwen2VLRunner(model_id=mid, device=dev)
+                    )
+                elif backend in ("qwen25_vl", "qwen2_5_vl", "qwen2.5_vl") and QwenRunner:
+                    # Stable HF Qwen2.5-VL runner (no InternLM remote-code)
+                    mid = model_id or "Qwen/Qwen2.5-VL-7B-Instruct"
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=mid, dev=device: QwenRunner(model_id=mid, device=dev)
                     )
                 else:
                     specialist_runners[name] = None
