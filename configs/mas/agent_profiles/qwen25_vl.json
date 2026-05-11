@@ -1,0 +1,21 @@
+{
+  "name": "qwen25_vl",
+  "full_name": "Qwen2.5-VL-7B-Instruct",
+  "description": "Qwen2.5-VL-7B-Instruct (HF) — stable VLM fallback to replace InternVL2 in 5-model ablations.",
+  "3dsrbench_overall": 0.60,
+  "unified_per_category": {
+    "depth": 0.90,
+    "distance": 0.80,
+    "relation": 0.82,
+    "existence": 0.75,
+    "count": 0.70,
+    "instance_location": 0.74,
+    "orientation": 0.80,
+    "size": 0.73,
+    "reach": 0.71
+  },
+  "initial_weight": 0.5,
+  "runner_type": "gpu",
+  "model_id": "Qwen/Qwen2.5-VL-7B-Instruct"
+}
+
