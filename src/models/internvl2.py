@@ -139,6 +139,13 @@ def _ensure_generation_config(model: torch.nn.Module) -> None:
     if lm is None:
         return
 
+    # Prefer enabling cache on config (safe even if generate() also passes use_cache).
+    try:
+        if getattr(lm.config, "use_cache", None) is not True:
+            lm.config.use_cache = True
+    except Exception:
+        pass
+
     if getattr(lm, "generation_config", None) is None:
         try:
             lm.generation_config = GenerationConfig.from_model_config(lm.config)
@@ -216,8 +223,6 @@ class InternVL2Runner:
         generation_config = dict(
             max_new_tokens=max_new_tokens,
             do_sample=temperature > 0,
-            # InternLM2 remote-code can crash if past_key_values stays None; ensure KV cache is used.
-            use_cache=True,
         )
         if temperature > 0:
             generation_config["temperature"] = temperature
