@@ -18,6 +18,10 @@ Usage:
   python scripts/evals/mas_pipeline/run_eval_mas.py --config scripts/evals/mas_pipeline/config_mas_head_llava_next.yaml --benchmark cvbench --full_dataset
 
 Env (API head): OPENAI_API_KEY. Head GPU: pas de clé. Reasoning GPU: CUDA. API specialists: clés habituelles.
+
+Ablation SpatiO (remplacer spatial_reasoner / spatial_rgpt par InternVL2 + Qwen2-VL) :
+  export MAS_CANDIDATE_AGENTS="qwen3_4b,sa2va,llava4d,internvl2,qwen2_vl"
+  Voir config_mas_ablation_internvl2_qwen2vl_cvbench500_h100.yaml et run_h100_ablation_internvl2_qwen2vl_cvbench500.sh
 """
 import argparse
 import json
@@ -68,6 +72,17 @@ except ImportError:
     Qwen3Runner = Sa2VARunner = LLaVARunner = SpatialReasonerRunner = DeepSeekVLGPURunner = None
     GPU_AVAILABLE = False
 
+InternVL2Runner = None
+try:
+    from src.models.internvl2 import InternVL2Runner
+except ImportError:
+    pass
+Qwen2VLRunner = None
+try:
+    from src.models.qwen2_vl import Qwen2VLRunner
+except ImportError:
+    pass
+
 
 def _norm_answer(s: str) -> str:
     """Normalize answer to (A)/(B)/(C)/(D)."""
@@ -102,10 +117,26 @@ def _tile_views(views: list[Image.Image]) -> Image.Image:
     return grid
 
 
+class _LazySpecialistRunner:
+    """Load a heavy GPU specialist only on first use (reduces peak VRAM vs loading all at once)."""
+
+    __slots__ = ("_builder", "_inst")
+
+    def __init__(self, builder):
+        self._builder = builder
+        self._inst = None
+
+    def generate(self, image, prompt, **kwargs):
+        if self._inst is None:
+            self._inst = self._builder()
+        return self._inst.generate(image, prompt, **kwargs)
+
+
 def build_runners(config: dict):
     """Build Head, Specialist, and Reasoning runners from config.
     Head: API (OpenAI) or GPU (LLaVA-NeXT / Qwen3-VL via backend).
-    Specialists: GPU (qwen3_4b, sa2va, llava4d) on H100, API for claude/gpt4o/gemini.
+    Specialists: GPU (qwen3_4b, sa2va, llava4d, internvl2, qwen2_vl, …) on H100, API for claude/gpt4o/gemini.
+    GPU specialists are wrapped lazy-loaded to avoid loading every checkpoint at startup.
     """
     head_cfg = config.get("head_agent", {})
     head_runner = None
@@ -161,20 +192,48 @@ def build_runners(config: dict):
             device = cfg.get("device", "cuda")
             backend = (cfg.get("backend") or name).lower()
             try:
-                if backend in ("qwen3", "qwen3_4b"):
-                    specialist_runners[name] = Qwen3Runner(model_id=model_id, device=device)
-                elif backend == "sa2va":
-                    specialist_runners[name] = Sa2VARunner(model_id=model_id, device=device)
-                elif backend in ("llava", "llava4d"):
-                    specialist_runners[name] = LLaVARunner(model_id=model_id, device=device)
-                elif backend in ("spatial_reasoner", "spatialreasoner"):
+                if backend in ("qwen3", "qwen3_4b") and Qwen3Runner:
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=model_id, dev=device: Qwen3Runner(model_id=mid, device=dev)
+                    )
+                elif backend == "sa2va" and Sa2VARunner:
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=model_id, dev=device: Sa2VARunner(model_id=mid, device=dev)
+                    )
+                elif backend in ("llava", "llava4d") and LLaVARunner:
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=model_id, dev=device: LLaVARunner(model_id=mid, device=dev)
+                    )
+                elif backend in ("spatial_reasoner", "spatialreasoner") and SpatialReasonerRunner:
                     processor_id = cfg.get("processor_id", "Qwen/Qwen2.5-VL-7B-Instruct")
                     bf16 = bool(cfg.get("bf16", True))
-                    specialist_runners[name] = SpatialReasonerRunner(
-                        model_id=model_id or "ccvl/SpatialReasoner",
-                        processor_id=processor_id,
-                        device=device,
-                        bf16=bf16,
+                    mid = model_id or "ccvl/SpatialReasoner"
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=mid, dev=device, pid=processor_id, b=bf16: SpatialReasonerRunner(
+                            model_id=mid,
+                            processor_id=pid,
+                            device=dev,
+                            bf16=b,
+                        )
+                    )
+                elif backend in ("internvl2", "intern_vl2") and InternVL2Runner:
+                    mid = model_id or "OpenGVLab/InternVL2-8B"
+                    inp = int(cfg.get("input_size", 448))
+                    mx = int(cfg.get("max_num_tiles", 12))
+                    ufa = bool(cfg.get("use_flash_attn", False))
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=mid, dev=device, inp=inp, mx=mx, ufa=ufa: InternVL2Runner(
+                            model_id=mid,
+                            device=dev,
+                            input_size=inp,
+                            max_num_tiles=mx,
+                            use_flash_attn=ufa,
+                        )
+                    )
+                elif backend in ("qwen2_vl", "qwen2vl") and Qwen2VLRunner:
+                    mid = model_id or "Qwen/Qwen2-VL-7B-Instruct"
+                    specialist_runners[name] = _LazySpecialistRunner(
+                        lambda mid=mid, dev=device: Qwen2VLRunner(model_id=mid, device=dev)
                     )
                 else:
                     specialist_runners[name] = None
@@ -280,7 +339,7 @@ def main():
         t = time.perf_counter()
         # GPU runners use max_new_tokens, API use max_tokens
         mod = type(r).__module__ or ""
-        if "src.models" in mod:
+        if isinstance(r, _LazySpecialistRunner) or "src.models" in mod:
             out = r.generate(img, prompt, max_new_tokens=2048)
         else:
             out = r.generate(img, prompt, max_tokens=2048)

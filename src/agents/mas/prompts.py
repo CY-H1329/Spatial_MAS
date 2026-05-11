@@ -2,7 +2,7 @@
 MAS prompts: Head-Agent, Specialist Agents, Reasoning Agent.
 Detailed, precise, English.
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 def build_head_agent_prompt(
@@ -10,12 +10,19 @@ def build_head_agent_prompt(
     agent_profiles_text: str,
     score_table_text: str,
     category_seen: Dict[str, bool],
+    candidate_agents: Optional[List[str]] = None,
 ) -> str:
     """Head-Agent (GPT-5.2) prompt.
     category_seen: {category: bool} — whether each category has been seen before.
     Head infers category first, then uses category_seen[inferred_category] for selection mode.
     """
     cat_seen_str = ", ".join(f"{c}={str(v).lower()}" for c, v in sorted(category_seen.items()))
+    from .config import get_candidate_agents
+
+    agents = list(candidate_agents) if candidate_agents is not None else get_candidate_agents()
+    n_cand = len(agents)
+    agents_csv = ", ".join(agents)
+    name_alt = "|".join(agents)
     return f"""# ROLE: HEAD-AGENT (FIXED) — Router + Committee Selector + Coordination Planner
 
 You are the fixed Head-Agent of a Spatial Multi-Agent System (Spatial_MAS). You MUST NOT be replaced.
@@ -24,14 +31,14 @@ You are the fixed Head-Agent of a Spatial Multi-Agent System (Spatial_MAS). You 
 
 Given an input (Query + 2D Image), you must:
 1) Infer the most likely spatial task category among: depth, distance, relation, existence, count, instance_location, orientation, size, reach.
-2) Select exactly 3 agents out of 6 candidates to solve the task.
+2) Select exactly 3 agents out of {n_cand} candidates to solve the task.
 3) Create a coordination policy for the Perception stage (fast vs tools vs explicit 3D representation), but DO NOT force a single strategy — each selected agent will decide autonomously.
 4) Produce an instruction package that will be passed to the 3 selected agents.
 
 ## Inputs
 
 - query: {query}
-- candidate_agents (6): llava4d, qwen3_4b, sa2va, claude_sonnet_4_5, gpt4o, gemini_robotics_er
+- candidate_agents ({n_cand}): {agents_csv}
 - agent_profiles (per-category performance on 3DSRBench and CV-Bench):
 {agent_profiles_text}
 
@@ -62,7 +69,7 @@ But each agent MUST still choose their own strategy autonomously.
   "difficulty_estimate": "low|medium|high",
   "selection_mode": "profile_based|score_based",
   "selected_agents": [
-    {{"name": "llava4d|qwen3_4b|sa2va|claude_sonnet_4_5|gpt4o|gemini_robotics_er", "reason": "..."}},
+    {{"name": "{name_alt}", "reason": "..."}},
     {{"name": "...", "reason": "..."}},
     {{"name": "...", "reason": "..."}}
   ],
@@ -219,6 +226,6 @@ def format_score_table_full(scores: Dict[str, Dict[str, float]], categories: Lis
     for cat in categories:
         pairs = [(m, w.get(cat, 0)) for m, w in scores.items()]
         pairs.sort(key=lambda x: -x[1])
-        vals = ", ".join(f"{m}={w:.2f}" for m, w in pairs[:6])
+        vals = ", ".join(f"{m}={w:.2f}" for m, w in pairs)
         lines.append(f"  {cat}: {vals}")
     return "\n".join(lines)

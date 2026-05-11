@@ -3,6 +3,7 @@ MAS configuration: agent profiles (per-category performance), score deltas, cate
 Profiles from configs/mas/agent_profiles/*.json or fallback to hardcoded baselines.
 """
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -10,15 +11,28 @@ from typing import Dict, List, Optional
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONFIGS_MAS = _PROJECT_ROOT / "configs" / "mas"
 
-# 6 candidate specialist agents
+# Default candidate specialist agents (includes InternVL2 + Qwen2-VL for SpatiO-style ablations).
+# Override at runtime: MAS_CANDIDATE_AGENTS="qwen3_4b,sa2va,llava4d,internvl2,qwen2_vl"
 CANDIDATE_AGENTS = [
     "llava4d",
     "qwen3_4b",
     "sa2va",
+    "internvl2",
+    "qwen2_vl",
     "claude_sonnet_4_5",
     "gpt4o",
     "gemini_robotics_er",
 ]
+
+
+def get_candidate_agents() -> List[str]:
+    """Subset of CANDIDATE_AGENTS from env MAS_CANDIDATE_AGENTS (comma-separated)."""
+    raw = os.environ.get("MAS_CANDIDATE_AGENTS", "").strip()
+    if not raw:
+        return list(CANDIDATE_AGENTS)
+    allowed = set(CANDIDATE_AGENTS)
+    out = [x.strip() for x in raw.split(",") if x.strip() in allowed]
+    return out if out else list(CANDIDATE_AGENTS)
 
 # Unified task categories (Head infers one of these)
 TASK_CATEGORIES = [
@@ -137,6 +151,32 @@ AGENT_PROFILES: Dict[str, Dict[str, float]] = {
         "existence": 0.68,
         "instance_location": 0.72,
         "size": 0.66,
+        "reach": 0.70,
+    },
+    "internvl2": {
+        "description": "InternVL2-8B: open multimodal model (replaces SpatialRGPT slot in ablations).",
+        "3dsrbench_overall": 0.55,
+        "depth": 0.82,
+        "relation": 0.78,
+        "distance": 0.74,
+        "count": 0.70,
+        "orientation": 0.76,
+        "existence": 0.72,
+        "instance_location": 0.71,
+        "size": 0.70,
+        "reach": 0.68,
+    },
+    "qwen2_vl": {
+        "description": "Qwen2-VL-7B-Instruct: general VLM (replaces SpatialReasoner slot in ablations).",
+        "3dsrbench_overall": 0.58,
+        "depth": 0.88,
+        "relation": 0.80,
+        "distance": 0.78,
+        "count": 0.68,
+        "orientation": 0.78,
+        "existence": 0.74,
+        "instance_location": 0.73,
+        "size": 0.72,
         "reach": 0.70,
     },
 }

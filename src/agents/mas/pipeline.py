@@ -7,7 +7,7 @@ from typing import Callable, Dict, List, Optional
 
 from PIL import Image
 
-from .config import CANDIDATE_AGENTS, TASK_CATEGORIES, load_agent_profiles
+from .config import AGENT_PROFILES, TASK_CATEGORIES, get_candidate_agents, load_agent_profiles
 from .prompts import (
     build_head_agent_prompt,
     build_specialist_agent_prompt,
@@ -97,8 +97,13 @@ def run_spatial_mas_pipeline(
             category_seen[c] = False
 
     # 1. Head-Agent
+    candidates = get_candidate_agents()
     agent_profiles = load_agent_profiles()
-    profiles_text = format_agent_profiles(agent_profiles)
+    profiles_filtered = {k: v for k, v in agent_profiles.items() if k in candidates}
+    for k in candidates:
+        if k not in profiles_filtered:
+            profiles_filtered[k] = agent_profiles.get(k) or AGENT_PROFILES.get(k, {"description": k})
+    profiles_text = format_agent_profiles(profiles_filtered)
     score_text = format_score_table_full(score_manager.to_dict(), TASK_CATEGORIES)
 
     head_prompt = build_head_agent_prompt(
@@ -106,6 +111,7 @@ def run_spatial_mas_pipeline(
         agent_profiles_text=profiles_text,
         score_table_text=score_text,
         category_seen=category_seen,
+        candidate_agents=candidates,
     )
     head_output = head_generate(image, head_prompt) if head_generate else ""
     head_data = _parse_head_output(head_output)
@@ -120,9 +126,9 @@ def run_spatial_mas_pipeline(
         selected = [s.get("name", "") for s in sel_list if s.get("name")]
     else:
         selected = list(sel_list) if isinstance(sel_list, list) else []
-    selected = [s for s in selected if s in CANDIDATE_AGENTS][:3]
+    selected = [s for s in selected if s in candidates][:3]
     if len(selected) < 3:
-        selected = (selected + [a for a in CANDIDATE_AGENTS if a not in selected])[:3]
+        selected = (selected + [a for a in candidates if a not in selected])[:3]
 
     policy = head_data.get("perception_coordination_policy", {})
     policy_str = json.dumps(policy, indent=2) if isinstance(policy, dict) else str(policy)

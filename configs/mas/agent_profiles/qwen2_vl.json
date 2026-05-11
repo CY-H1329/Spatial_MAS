@@ -1,0 +1,20 @@
+{
+  "name": "qwen2_vl",
+  "full_name": "Qwen2-VL-7B-Instruct",
+  "description": "Qwen2-VL-7B-Instruct — ablation slot replacing SpatialReasoner (plain Qwen2-VL, not ccvl/SpatialReasoner).",
+  "3dsrbench_overall": 0.58,
+  "unified_per_category": {
+    "depth": 0.88,
+    "distance": 0.78,
+    "relation": 0.80,
+    "existence": 0.74,
+    "count": 0.68,
+    "instance_location": 0.73,
+    "orientation": 0.78,
+    "size": 0.72,
+    "reach": 0.70
+  },
+  "initial_weight": 0.5,
+  "runner_type": "gpu",
+  "model_id": "Qwen/Qwen2-VL-7B-Instruct"
+}

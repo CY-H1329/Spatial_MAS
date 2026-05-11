@@ -30,6 +30,14 @@ try:
 except Exception:
     pass
 try:
+    from .internvl2 import InternVL2Runner
+except Exception:
+    InternVL2Runner = None  # type: ignore
+try:
+    from .qwen2_vl import Qwen2VLRunner
+except Exception:
+    Qwen2VLRunner = None  # type: ignore
+try:
     from .gpt import GPTRunner
 except Exception:
     pass
@@ -40,6 +48,6 @@ except Exception:
 
 __all__ = [
     "BaseVLM", "QwenRunner", "Qwen3Runner", "LLaVARunner", "Sa2VARunner",
-    "SpatialReasonerRunner",
+    "SpatialReasonerRunner", "InternVL2Runner", "Qwen2VLRunner",
     "DeepSeekVLRunner", "GPTRunner", "GeminiRunner",
 ]

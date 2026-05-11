@@ -1,0 +1,59 @@
+# SpatiO-style ablation (mas_pipeline): no spatial_reasoner / no spatial_rgpt.
+# Specialists pool = Qwen3-VL-4B, Sa2VA, LLaVA, InternVL2-8B, Qwen2-VL-7B (all GPU).
+#
+# Prérequis H100: transformers récent, VRAM suffisante (Head + Reasoning + 3 spécialistes séquentiels
+# selon sélection — en pratique charger 5 modèles peut OOM; ce script fixe le pool Head à 5 noms
+# via MAS_CANDIDATE_AGENTS dans run_h100_ablation_internvl2_qwen2vl_cvbench500.sh).
+#
+# CV-Bench 500 (sous-ensemble reproductible, seed) :
+#   bash scripts/evals/mas_pipeline/run_h100_ablation_internvl2_qwen2vl_cvbench500.sh
+
+head_agent:
+  runner: "gpu"
+  backend: "llava"
+  model_id: "llava-hf/llava-v1.6-mistral-7b-hf"
+  device: "cuda"
+
+reasoning_agent:
+  runner: "gpu"
+  model_id: "deepseek-community/deepseek-vl-7b-chat"
+  device: "cuda"
+
+specialists:
+  qwen3_4b:
+    runner: "gpu"
+    backend: "qwen3"
+    model_id: "Qwen/Qwen3-VL-4B-Instruct"
+    device: "cuda"
+  sa2va:
+    runner: "gpu"
+    backend: "sa2va"
+    model_id: "ByteDance/Sa2VA-4B"
+    device: "cuda"
+  llava4d:
+    runner: "gpu"
+    backend: "llava"
+    model_id: "llava-hf/llava-1.5-7b-hf"
+    device: "cuda"
+  internvl2:
+    runner: "gpu"
+    backend: "internvl2"
+    model_id: "OpenGVLab/InternVL2-8B"
+    device: "cuda"
+    use_flash_attn: false
+    input_size: 448
+    max_num_tiles: 12
+  qwen2_vl:
+    runner: "gpu"
+    backend: "qwen2_vl"
+    model_id: "Qwen/Qwen2-VL-7B-Instruct"
+    device: "cuda"
+
+dataset:
+  benchmark: "cvbench"
+  max_samples: 500
+  test_samples: 5
+  seed: 42
+
+output:
+  dir: "results/runs/mas_pipeline_ablation_internvl2_qwen2vl"

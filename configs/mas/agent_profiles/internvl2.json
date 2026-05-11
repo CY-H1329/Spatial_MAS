@@ -1,0 +1,20 @@
+{
+  "name": "internvl2",
+  "full_name": "InternVL2-8B",
+  "description": "InternVL2-8B (OpenGVLab): open multimodal model — ablation slot replacing SpatialRGPT.",
+  "3dsrbench_overall": 0.55,
+  "unified_per_category": {
+    "depth": 0.82,
+    "distance": 0.74,
+    "relation": 0.78,
+    "existence": 0.72,
+    "count": 0.70,
+    "instance_location": 0.71,
+    "orientation": 0.76,
+    "size": 0.70,
+    "reach": 0.68
+  },
+  "initial_weight": 0.5,
+  "runner_type": "gpu",
+  "model_id": "OpenGVLab/InternVL2-8B"
+}
