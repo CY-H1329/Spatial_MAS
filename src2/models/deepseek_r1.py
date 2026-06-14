@@ -73,16 +73,19 @@ class DeepSeekR1LocalRunner:
         dtype = getattr(torch, torch_dtype) if torch_dtype else torch.bfloat16
 
         self.model_id = model_id
+        self.device = device
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_id, trust_remote_code=True
         )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_id,
+        load_kwargs = dict(
             torch_dtype=dtype,
-            device_map="auto" if device == "cuda" else device,
             trust_remote_code=True,
-            **kwargs,
+            low_cpu_mem_usage=False,
+            **{k: v for k, v in kwargs.items() if k not in ("device_map",)},
         )
+        # No device_map — run without accelerate
+        self.model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+        self.model = self.model.to(device)
         self.model.eval()
 
     def generate(
@@ -99,7 +102,7 @@ class DeepSeekR1LocalRunner:
         text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
         gen_kwargs = dict(
             max_new_tokens=max_tokens,
             do_sample=temperature > 0,
