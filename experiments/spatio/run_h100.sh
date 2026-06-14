@@ -30,6 +30,7 @@ cd "$PROJECT_ROOT"
 
 MODE="${1:-baseline}"
 shift || true
+PASSTHRU_ARGS=("$@")
 
 SEED="${SEED:-42}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
@@ -63,7 +64,7 @@ run_mas_v2_test() {
     --reasoning_local_model "$REASONING_MODEL" \
     --device cuda \
     "${EXTRA_ARGS[@]}" \
-    "$@"
+    "${PASSTHRU_ARGS[@]}"
 }
 
 echo "=============================================="
@@ -76,23 +77,23 @@ echo "=============================================="
 
 case "$MODE" in
   quick)
-    run_mas_v2_test cvbench 10 "$@"
+    run_mas_v2_test cvbench 10
     ;;
   baseline)
     for BENCHMARK in cvbench 3dsrbench; do
       for N in 10 50 100; do
-        run_mas_v2_test "$BENCHMARK" "$N" "$@"
+        run_mas_v2_test "$BENCHMARK" "$N"
       done
     done
     ;;
   cvbench)
     for N in 10 50 100; do
-      run_mas_v2_test cvbench "$N" "$@"
+      run_mas_v2_test cvbench "$N"
     done
     ;;
   3dsrbench|3dsr)
     for N in 10 50 100; do
-      run_mas_v2_test 3dsrbench "$N" "$@"
+      run_mas_v2_test 3dsrbench "$N"
     done
     ;;
   tto-cvbench)
@@ -105,7 +106,7 @@ case "$MODE" in
       --seed "$SEED" \
       ${LOW_MEMORY:+--low_memory} \
       ${SPECIALIST_OFFLOAD:+--specialist_offload} \
-      "$@"
+      "${PASSTHRU_ARGS[@]}"
     ;;
   tto-3dsrbench)
     echo ">>> SpatialTTO — 3DSRBench (train TTO + eval frozen)"
@@ -114,7 +115,7 @@ case "$MODE" in
       --top_p "$TOP_P" \
       --seed "$SEED" \
       ${LOW_MEMORY:+--low_memory} \
-      "$@"
+      "${PASSTHRU_ARGS[@]}"
     ;;
   tto-stvqa)
     echo ">>> SpatialTTO — STVQA (train TTO + eval frozen)"
@@ -125,7 +126,7 @@ case "$MODE" in
       --top_p "$TOP_P" \
       --seed "$SEED" \
       ${LOW_MEMORY:+--low_memory} \
-      "$@"
+      "${PASSTHRU_ARGS[@]}"
     ;;
   stvqa)
     echo ">>> STVQA-7K — single-agent baselines (5 modèles)"
