@@ -18,6 +18,7 @@
 #   LOW_MEMORY=1              → 3 agents (qwen3_4b, llava4d, spatial_reasoner)
 #   TEMPERATURE=0.7           → sampling (défaut 0 = greedy)
 #   REASONING_MODEL=...       → modèle reasoning local (défaut DeepSeek-R1-Distill-Qwen-7B)
+#   KILL_STALE_GPU=1         → tuer les anciens jobs Python sur GPU avant le run
 #   SPATIALRGPT_PATH=...      → requis pour spatial_rgpt / STVQA spatialrgpt
 #
 set -euo pipefail
@@ -29,6 +30,11 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# Optional: kill stale Python GPU jobs before long full-dataset runs
+if [[ -n "${KILL_STALE_GPU:-}" ]]; then
+  bash "$PROJECT_ROOT/scripts/gpu_cleanup.sh" --kill || true
+fi
 
 MODE="${1:-baseline}"
 shift || true

@@ -67,16 +67,22 @@ bash experiments/spatio/run_h100.sh stvqa
 | Variable | Description |
 |----------|-------------|
 | `LOW_MEMORY=1` | 3 agents seulement (évite OOM) |
+| `KILL_STALE_GPU=1` | Tuer les anciens jobs Python sur GPU avant le run |
 | `TEMPERATURE=0.7` | Sampling (défaut 0 = greedy) |
 | `REASONING_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | Modèle reasoning plus petit |
 | `MAX_SAMPLES=10` | Limite STVQA (via `experiments/stvqa7k/run_h100.sh`) |
 | `SPATIALRGPT_PATH` | Chemin SpatialRGPT pour spatial_rgpt |
 
-Exemple OOM :
+Exemple OOM / full dataset :
 
 ```bash
-LOW_MEMORY=1 REASONING_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
-  bash experiments/spatio/run_h100.sh quick
+# 1) Libérer la VRAM (autres process Python sur GPU)
+bash scripts/gpu_cleanup.sh --kill
+
+# 2) Full CV-Bench avec 3 agents + reasoning 1.5B
+KILL_STALE_GPU=1 LOW_MEMORY=1 \
+REASONING_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B \
+bash experiments/spatio/run_h100.sh full-cvbench
 ```
 
 ## 5. Résultats

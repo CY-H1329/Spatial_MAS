@@ -55,6 +55,33 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def cuda_cleanup():
+    """Free cached GPU memory in the current process."""
+    import gc
+    import torch
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+
+
+def _offload_runner_to_cpu(runner) -> None:
+    if runner is None:
+        return
+    if hasattr(runner, "model") and runner.model is not None:
+        runner.model = runner.model.to("cpu")
+    cuda_cleanup()
+
+
+def _ensure_runner_on_gpu(runner, device: str) -> None:
+    if runner is None:
+        return
+    if hasattr(runner, "model") and runner.model is not None:
+        runner.model = runner.model.to(device)
+
 
 # ======================================================================
 # Model loading helpers
@@ -96,6 +123,7 @@ def build_runners(
     _spec_device = specialist_only_device if specialist_only_device is not None else specialist_device
     if specialist_offload_after_use:
         _spec_device = "cpu"  # load to CPU, move to GPU only during inference
+    _load_device = "cpu" if specialist_offload_after_use else specialist_device
     from src2.models.qwen3 import Qwen3Runner
     from src2.models.llava import LLaVARunner
     from src2.models.sa2va import Sa2VARunner
@@ -108,16 +136,27 @@ def build_runners(
     def _get_head():
         nonlocal _head_runner
         if _head_runner is None:
-            _head_runner = Qwen3Runner(device=specialist_device)
+            _head_runner = Qwen3Runner(device=_load_device)
         return _head_runner
 
+    def _offload_head_to_cpu():
+        if _head_runner is not None:
+            _offload_runner_to_cpu(_head_runner)
+
+    def _ensure_head_on_gpu():
+        _ensure_runner_on_gpu(_get_head(), specialist_device)
+
     def head_generate(image, prompt: str) -> str:
-        return _get_head().generate(
+        if specialist_offload_after_use:
+            _offload_reasoning_to_cpu()
+        _ensure_head_on_gpu()
+        out = _get_head().generate(
             image, prompt,
             temperature=temperature,
             max_new_tokens=64,
             top_p=top_p if temperature > 0 else 0.0,
         )
+        return out
 
     # --- 5 Specialist VLMs (lazy-loaded, cached) ---
     _specialist_cache = {}
@@ -126,18 +165,19 @@ def build_runners(
     def _offload_specialist_to_cpu(name: str):
         if name not in _specialist_cache:
             return
+        if name == "qwen3_4b":
+            _offload_head_to_cpu()
+            return
         runner = _specialist_cache[name]
-        if hasattr(runner, "model"):
-            runner.model = runner.model.to("cpu")
-        import torch
-        torch.cuda.empty_cache()
+        _offload_runner_to_cpu(runner)
 
     def _ensure_specialist_on_gpu(name: str):
         if name not in _specialist_cache:
             return
-        runner = _specialist_cache[name]
-        if hasattr(runner, "model"):
-            runner.model = runner.model.to(specialist_device)
+        if name == "qwen3_4b":
+            _ensure_head_on_gpu()
+            return
+        _ensure_runner_on_gpu(_specialist_cache[name], specialist_device)
 
     def _get_specialist(name: str):
         if specialist_whitelist is not None and name not in specialist_whitelist:
@@ -169,14 +209,16 @@ def build_runners(
         return _specialist_cache[name]
 
     def specialist_generate(llm_name: str, image, prompt: str) -> str:
+        if specialist_offload_after_use:
+            _offload_reasoning_to_cpu()
         runner = _get_specialist(llm_name)
-        if specialist_offload_after_use and llm_name != "qwen3_4b":
+        if specialist_offload_after_use:
             nonlocal _last_specialist_on_gpu
-            # Offload previous specialist from GPU if different
             if _last_specialist_on_gpu and _last_specialist_on_gpu != llm_name:
                 _offload_specialist_to_cpu(_last_specialist_on_gpu)
                 _last_specialist_on_gpu = None
-            # Move current specialist to GPU
+            if llm_name != "qwen3_4b":
+                _offload_head_to_cpu()
             _ensure_specialist_on_gpu(llm_name)
             _last_specialist_on_gpu = llm_name
         out = runner.generate(
@@ -185,14 +227,31 @@ def build_runners(
             max_new_tokens=1024,
             top_p=top_p if temperature > 0 else 0.0,
         )
-        if specialist_offload_after_use and llm_name != "qwen3_4b":
+        if specialist_offload_after_use:
             _offload_specialist_to_cpu(llm_name)
             _last_specialist_on_gpu = None
-            import torch
-            torch.cuda.empty_cache()
+            cuda_cleanup()
         return out
 
     # --- Final Reasoning Agent ---
+    _reasoning_local = None
+
+    def _get_reasoning_local():
+        nonlocal _reasoning_local
+        if _reasoning_local is None:
+            _reasoning_local = DeepSeekR1LocalRunner(
+                model_id=reasoning_local_model_id,
+                device=_load_device,
+            )
+        return _reasoning_local
+
+    def _offload_reasoning_to_cpu():
+        if _reasoning_local is not None:
+            _offload_runner_to_cpu(_reasoning_local)
+
+    def _ensure_reasoning_on_gpu():
+        _ensure_runner_on_gpu(_get_reasoning_local(), specialist_device)
+
     if use_vlm_reasoning:
         # Qwen3-VL-8B: image + SharedMemory + query (can verify specialist claims)
         _reasoning_vlm = Qwen3Runner(
@@ -210,18 +269,23 @@ def build_runners(
                 top_p=top_p if temperature > 0 else 0.0,
             )
     elif use_local_reasoning:
-        reasoning = DeepSeekR1LocalRunner(
-            model_id=reasoning_local_model_id,
-            device=specialist_device,
-        )
-
         def reasoning_generate(prompt: str, image=None):
-            return reasoning.generate(
+            if specialist_offload_after_use:
+                _offload_head_to_cpu()
+                if _last_specialist_on_gpu:
+                    _offload_specialist_to_cpu(_last_specialist_on_gpu)
+                cuda_cleanup()
+            _ensure_reasoning_on_gpu()
+            out = _get_reasoning_local().generate(
                 prompt,
                 temperature=temperature,
                 max_tokens=1024,
                 top_p=top_p if temperature > 0 else 0.0,
             )
+            if specialist_offload_after_use:
+                _offload_reasoning_to_cpu()
+                cuda_cleanup()
+            return out
     else:
         reasoning = DeepSeekR1Runner(
             api_base=reasoning_api_base,
@@ -538,6 +602,7 @@ def run_experiment(
 # CLI
 # ======================================================================
 def main():
+    cuda_cleanup()
     parser = argparse.ArgumentParser(description="MAS v2 evaluation")
     parser.add_argument("--benchmark", choices=["3dsrbench", "cvbench", "mindcube"], required=True)
     parser.add_argument("--train_ratio", type=float, default=0.5,
