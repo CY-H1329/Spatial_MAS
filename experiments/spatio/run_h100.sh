@@ -8,6 +8,8 @@
 #   git fetch origin && git reset --hard origin/main
 #   bash experiments/spatio/run_h100.sh quick          # test rapide (10 samples, cvbench)
 #   bash experiments/spatio/run_h100.sh baseline         # CV-Bench + 3DSRBench (10, 50, 100)
+#   bash experiments/spatio/run_h100.sh full-cvbench       # CV-Bench HF complet (~2638)
+#   bash experiments/spatio/run_h100.sh full-3dsrbench     # 3DSRBench HF complet
 #   bash experiments/spatio/run_h100.sh tto-cvbench      # SpatialTTO train + eval (CV-Bench)
 #   bash experiments/spatio/run_h100.sh tto-3dsrbench    # SpatialTTO train + eval (3DSRBench)
 #   bash experiments/spatio/run_h100.sh stvqa           # STVQA-7K (5 modèles, single-agent)
@@ -67,6 +69,24 @@ run_mas_v2_test() {
     "${PASSTHRU_ARGS[@]}"
 }
 
+run_mas_v2_full() {
+  local benchmark="$1"
+  echo ""
+  echo ">>> SpatiO MAS v2 | $benchmark | FULL HuggingFace dataset"
+  echo "----------------------------------------------"
+  python run_eval_mas_v2.py \
+    --benchmark "$benchmark" \
+    --test_only \
+    --hf_full_dataset \
+    --seed "$SEED" \
+    --output_dir "$OUTPUT_BASE/mas_v2_baseline" \
+    --use_local_reasoning \
+    --reasoning_local_model "$REASONING_MODEL" \
+    --device cuda \
+    "${EXTRA_ARGS[@]}" \
+    "${PASSTHRU_ARGS[@]}"
+}
+
 echo "=============================================="
 echo "SpatiO — H100 reproduction"
 echo "Mode: $MODE"
@@ -95,6 +115,16 @@ case "$MODE" in
     for N in 10 50 100; do
       run_mas_v2_test 3dsrbench "$N"
     done
+    ;;
+  full-cvbench)
+    run_mas_v2_full cvbench
+    ;;
+  full-3dsrbench|full-3dsr)
+    run_mas_v2_full 3dsrbench
+    ;;
+  full)
+    run_mas_v2_full cvbench
+    run_mas_v2_full 3dsrbench
     ;;
   tto-cvbench)
     echo ">>> SpatialTTO — CV-Bench (train TTO + eval frozen)"
@@ -140,10 +170,13 @@ case "$MODE" in
     bash scripts/evals/mindcube/run_mindcube_mas_v2_h100.sh
     ;;
   *)
-    echo "Usage: $0 {quick|baseline|cvbench|3dsrbench|tto-cvbench|tto-3dsrbench|tto-stvqa|stvqa|mindcube} [extra args...]"
+    echo "Usage: $0 {quick|baseline|cvbench|3dsrbench|full-cvbench|full-3dsrbench|full|tto-cvbench|tto-3dsrbench|tto-stvqa|stvqa|mindcube} [extra args...]"
     echo ""
     echo "  quick         — 10 samples CV-Bench (sanity check)"
     echo "  baseline      — CV-Bench + 3DSRBench × 10/50/100 (MAS v2, test-only)"
+    echo "  full-cvbench  — CV-Bench HF complet (~2638, --hf_full_dataset)"
+    echo "  full-3dsrbench — 3DSRBench HF complet"
+    echo "  full          — les deux benchmarks complets"
     echo "  tto-*         — SpatialTTO (train score map + frozen eval)"
     echo "  stvqa         — STVQA-7K single-model eval"
     exit 1

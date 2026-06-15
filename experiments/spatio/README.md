@@ -48,6 +48,11 @@ bash experiments/spatio/run_h100.sh quick
 # Reproduction complète MAS v2 (CV-Bench + 3DSRBench, 10/50/100 samples)
 bash experiments/spatio/run_h100.sh baseline
 
+# Full dataset (HuggingFace complet, très long sur H100)
+bash experiments/spatio/run_h100.sh full-cvbench      # ~2638 samples
+bash experiments/spatio/run_h100.sh full-3dsrbench    # 3DSRBench complet
+bash experiments/spatio/run_h100.sh full              # les deux
+
 # SpatiO avec TTO (train score map + eval frozen)
 bash experiments/spatio/run_h100.sh tto-cvbench
 bash experiments/spatio/run_h100.sh tto-3dsrbench
