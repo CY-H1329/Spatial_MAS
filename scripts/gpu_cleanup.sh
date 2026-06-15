@@ -5,10 +5,10 @@
 #   bash scripts/gpu_cleanup.sh              # show GPU status only
 #   bash scripts/gpu_cleanup.sh --kill         # kill GPU compute PIDs (except this shell tree)
 #   bash scripts/gpu_cleanup.sh --kill-all     # kill ALL GPU compute PIDs (aggressive)
+#   bash scripts/gpu_cleanup.sh --reset        # try nvidia-smi --gpu-reset (needs sudo, last resort)
 #
-# Before full-dataset SpatiO eval:
-#   bash scripts/gpu_cleanup.sh --kill
-#   nvidia-smi   # should show < 5 GiB used
+# Stale GPU context (PIDs show [Not Found], kill fails):
+#   → restart Jupyter kernel / container pod — see docs/GPU_STALE_CONTEXT.md
 #
 set -euo pipefail
 
@@ -20,11 +20,26 @@ echo "=== Compute processes ==="
 nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory --format=csv 2>/dev/null || true
 
 MODE="${1:-}"
-if [[ "$MODE" != "--kill" && "$MODE" != "--kill-all" ]]; then
+if [[ "$MODE" != "--kill" && "$MODE" != "--kill-all" && "$MODE" != "--reset" ]]; then
   echo ""
   echo "To free VRAM:"
   echo "  bash scripts/gpu_cleanup.sh --kill       # safe (skip current shell tree)"
-  echo "  bash scripts/gpu_cleanup.sh --kill-all     # kill every GPU PID (use if --kill fails)"
+  echo "  bash scripts/gpu_cleanup.sh --kill-all   # kill every GPU PID"
+  echo "  bash scripts/gpu_cleanup.sh --reset        # nvidia-smi --gpu-reset (sudo, last resort)"
+  echo ""
+  echo "Stale context (PIDs [Not Found]): restart container — docs/GPU_STALE_CONTEXT.md"
+  exit 0
+fi
+
+if [[ "$MODE" == "--reset" ]]; then
+  echo ""
+  echo "=== Attempting GPU reset (requires root, may fail if GPU busy) ==="
+  if sudo nvidia-smi --gpu-reset -i 0; then
+    echo "GPU reset OK."
+  else
+    echo "GPU reset failed. Restart the Jupyter/container session."
+  fi
+  nvidia-smi
   exit 0
 fi
 
@@ -99,9 +114,33 @@ echo "=== GPU status after cleanup ==="
 nvidia-smi
 
 USED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
-if [[ -n "$USED" && "$USED" -gt 5000 ]]; then
+STALE=0
+for pid in $PIDS; do
+  [[ -z "$pid" ]] && continue
+  if ! ps -p "$pid" >/dev/null 2>&1; then
+    STALE=1
+    break
+  fi
+done
+
+if [[ "$STALE" == "1" ]]; then
   echo ""
-  echo "WARNING: GPU still uses ${USED} MiB. Stale context may remain."
-  echo "  sudo kill -9 \$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | tr -d ' ')"
+  echo "======================================================================"
+  echo "STALE GPU CONTEXT (zombie VRAM)"
+  echo "======================================================================"
+  echo "nvidia-smi lists PIDs that no longer exist in this container."
+  echo "VRAM is held by a dead job (often from the host or another session)."
+  echo ""
+  echo "Fix (pick one):"
+  echo "  1. Restart Jupyter / container pod  (recommended)"
+  echo "  2. bash scripts/gpu_cleanup.sh --reset   (sudo, may need admin)"
+  echo "  3. Run with ~17 GiB free: LOW_MEMORY=1 bash experiments/spatio/run_h100.sh quick"
+  echo ""
+  echo "See: docs/GPU_STALE_CONTEXT.md"
+  echo "======================================================================"
+elif [[ -n "$USED" && "$USED" -gt 5000 ]]; then
+  echo ""
+  echo "WARNING: GPU still uses ${USED} MiB."
+  echo "  bash scripts/gpu_cleanup.sh --reset"
   echo "  Or restart the Jupyter/container session."
 fi
