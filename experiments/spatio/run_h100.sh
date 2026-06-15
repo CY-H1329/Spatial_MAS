@@ -31,9 +31,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Optional: kill stale Python GPU jobs before long full-dataset runs
+# Optional: kill stale GPU jobs before long full-dataset runs
 if [[ -n "${KILL_STALE_GPU:-}" ]]; then
-  bash "$PROJECT_ROOT/scripts/gpu_cleanup.sh" --kill || true
+  bash "$PROJECT_ROOT/scripts/gpu_cleanup.sh" --kill-all || true
 fi
 
 MODE="${1:-baseline}"

@@ -68,6 +68,30 @@ def cuda_cleanup():
             pass
 
 
+def gpu_memory_free_gib() -> Optional[float]:
+    """Return free GPU memory in GiB, or None if CUDA unavailable."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return None
+        free, _total = torch.cuda.mem_get_info()
+        return free / (1024 ** 3)
+    except Exception:
+        return None
+
+
+def warn_if_gpu_memory_low(min_free_gib: float = 20.0) -> None:
+    free = gpu_memory_free_gib()
+    if free is None:
+        return
+    if free < min_free_gib:
+        logger.warning(
+            "Low GPU memory: %.1f GiB free (recommend >= %.0f GiB). "
+            "Run: bash scripts/gpu_cleanup.sh --kill-all",
+            free, min_free_gib,
+        )
+
+
 def _offload_runner_to_cpu(runner) -> None:
     if runner is None:
         return
@@ -156,6 +180,9 @@ def build_runners(
             max_new_tokens=64,
             top_p=top_p if temperature > 0 else 0.0,
         )
+        if specialist_offload_after_use:
+            _offload_head_to_cpu()
+            cuda_cleanup()
         return out
 
     # --- 5 Specialist VLMs (lazy-loaded, cached) ---
@@ -219,6 +246,7 @@ def build_runners(
                 _last_specialist_on_gpu = None
             if llm_name != "qwen3_4b":
                 _offload_head_to_cpu()
+                cuda_cleanup()
             _ensure_specialist_on_gpu(llm_name)
             _last_specialist_on_gpu = llm_name
         out = runner.generate(
@@ -603,6 +631,7 @@ def run_experiment(
 # ======================================================================
 def main():
     cuda_cleanup()
+    warn_if_gpu_memory_low(min_free_gib=20.0)
     parser = argparse.ArgumentParser(description="MAS v2 evaluation")
     parser.add_argument("--benchmark", choices=["3dsrbench", "cvbench", "mindcube"], required=True)
     parser.add_argument("--train_ratio", type=float, default=0.5,
