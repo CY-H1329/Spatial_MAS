@@ -51,16 +51,35 @@ echo ""
 echo "========== Interpretation =========="
 USED=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
 UTIL=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
-NPROC=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | wc -l | tr -d ' ')
+PIDS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr -d ' ' || true)
+STALE=0
+for pid in $PIDS; do
+  [[ -z "$pid" ]] && continue
+  if ! ps -p "$pid" >/dev/null 2>&1; then
+    STALE=1
+    break
+  fi
+done
+NPROC=$(echo "$PIDS" | grep -c . || true)
 
-if [[ -n "$USED" && "$USED" -gt 50000 && "$NPROC" -eq 0 ]]; then
-  echo "  HIGH memory ($USED MiB) but empty process table → stale VRAM or job outside this container."
-  echo "  Fix: restart Jupyter pod / container (not kill from inside)."
+if [[ "$STALE" == "1" ]]; then
+  echo "  STALE GPU CONTEXT — PIDs in nvidia-smi but not in this container (e.g. 832062)."
+  echo "  ~${USED} MiB locked, GPU util ${UTIL}% — likely an old job still on the driver."
+  echo "  kill / gpu_cleanup.sh will NOT work here."
+  echo ""
+  echo "  Fix:"
+  echo "    1. JupyterHub → Stop My Server → Start  (recommended)"
+  echo "    2. bash scripts/gpu_cleanup.sh --reset    (sudo, may fail)"
+  echo "    3. Ask admin to reset GPU or assign a clean node"
+  echo ""
+  echo "  Workaround (~17 GiB free): LOW_MEMORY=1 bash experiments/spatio/run_h100.sh quick"
+elif [[ -n "$USED" && "$USED" -gt 50000 && "$NPROC" -eq 0 ]]; then
+  echo "  HIGH memory ($USED MiB) but empty process table → restart container."
 elif [[ -n "$UTIL" && "$UTIL" -gt 10 && "$NPROC" -eq 0 ]]; then
-  echo "  GPU util ${UTIL}% with no visible PIDs → compute likely on HOST or another pod sharing GPU."
-  echo "  Fix: stop other users' jobs or request dedicated GPU / pod restart."
+  echo "  GPU util ${UTIL}% with no visible PIDs → job outside this container."
+  echo "  Fix: restart pod or request dedicated GPU."
 elif [[ "$NPROC" -gt 0 ]]; then
-  echo "  $NPROC compute process(es) listed — try: bash scripts/gpu_cleanup.sh --kill-all"
+  echo "  $NPROC live compute process(es) — try: bash scripts/gpu_cleanup.sh --kill-all"
 else
   echo "  GPU looks mostly free."
 fi
