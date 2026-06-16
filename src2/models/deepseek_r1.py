@@ -102,7 +102,8 @@ class DeepSeekR1LocalRunner:
         text = self.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
+        model_device = next(self.model.parameters()).device
+        inputs = self.tokenizer(text, return_tensors="pt").to(model_device)
         gen_kwargs = dict(
             max_new_tokens=max_tokens,
             do_sample=temperature > 0,

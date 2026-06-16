@@ -97,6 +97,8 @@ def _offload_runner_to_cpu(runner) -> None:
         return
     if hasattr(runner, "model") and runner.model is not None:
         runner.model = runner.model.to("cpu")
+    if hasattr(runner, "device"):
+        runner.device = "cpu"
     cuda_cleanup()
 
 
@@ -105,6 +107,8 @@ def _ensure_runner_on_gpu(runner, device: str) -> None:
         return
     if hasattr(runner, "model") and runner.model is not None:
         runner.model = runner.model.to(device)
+    if hasattr(runner, "device"):
+        runner.device = device
 
 
 # ======================================================================
